@@ -1,0 +1,63 @@
+# ----- 通用忽略规则（服务端和客户端均生效） -----
+# 依赖目录
+**/node_modules/
+
+# 环境变量
+.env
+.env.*
+!.env.example  # 例外：保留示例文件
+
+# 构建产物
+dist/
+build/
+out/
+*.tmp
+
+# 日志文件
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# IDE 文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 调试文件
+.nyc_output
+coverage/
+
+
+# ----- 服务端特殊规则（server目录） -----
+/server/.env
+/server/logs/
+
+
+# ----- 客户端特殊规则（client目录） -----
+/client/dist/
+/client/build/
+/client/.cache
+/client/.vite/
+
+
+# ----- 锁定文件（根据团队规范决定） -----
+# 如果团队使用自动合并工具可忽略，否则建议保留
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+
+# ----- 其他特殊文件 -----
+# 忽略 Vercel 部署配置
+.vercel
+
+# 保留必要路由文件（避免误删 routes/ 下的文件）
+!routes/
+!**/routes/
