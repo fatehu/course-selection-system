@@ -1,0 +1,1 @@
+首先在client、server目录下使用npm install安装依赖，之后分别在前后端根目录下用终端输入npm run dev
