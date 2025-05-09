@@ -1,5 +1,5 @@
 const { pool } = require('../config/db');
-const bcrypt = require('bcrypt');
+const bcryptjs = require('bcryptjs');
 
 class User {
   // 获取所有用户
@@ -39,7 +39,7 @@ class User {
   static async create(userData) {
     try {
       const { username, password, name, email, role } = userData;
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await bcryptjs.hash(password, 10);
       
       const [result] = await pool.query(
         'INSERT INTO users (username, password, name, email, role) VALUES (?, ?, ?, ?, ?)',
@@ -69,7 +69,7 @@ class User {
 
   //     // 如果提供了新密码，则更新密码
   //     if (password) {
-  //       password = await bcrypt.hash(password, 10);
+  //       password = await bcryptjs.hash(password, 10);
   //       query += ', password = ?';
   //       params.push(password);
   //     }
@@ -103,7 +103,7 @@ class User {
       
       // 如果提供了新密码，则更新密码
       if (password) {
-        password = await bcrypt.hash(password, 10);
+        password = await bcryptjs.hash(password, 10);
         query += ', password = ?';
         params.push(password);
       }
@@ -179,7 +179,7 @@ class User {
         return null;
       }
       
-      const isMatch = await bcrypt.compare(password, user.password);
+      const isMatch = await bcryptjs.compare(password, user.password);
       
       if (!isMatch) {
         return null;
@@ -236,7 +236,7 @@ class User {
       }
       
       // 验证密码
-      const isMatch = await bcrypt.compare(password, rows[0].password);
+      const isMatch = await bcryptjs.compare(password, rows[0].password);
       return isMatch;
     } catch (error) {
       console.error('验证用户密码失败:', error);
