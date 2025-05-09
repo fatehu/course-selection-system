@@ -5,7 +5,7 @@
         <h2>欢迎回来，{{ user.name }}!</h2>
       </el-col>
     </el-row>
-    
+
     <el-row :gutter="20" class="stats-row">
       <!-- 管理员视图 -->
       <template v-if="isAdmin">
@@ -14,25 +14,21 @@
             <div class="stat-card-title">用户总数</div>
             <div class="stat-card-value">{{ dashboardStats.userCount || 0 }}</div>
             <div class="stat-card-actions">
-              <el-button type="primary" link @click="navigateTo('/users')">
-                管理用户
-              </el-button>
+              <el-button type="primary" link @click="navigateTo('/users')"> 管理用户 </el-button>
             </div>
           </el-card>
         </el-col>
-        
+
         <el-col :xs="24" :sm="12" :md="6">
           <el-card class="stat-card">
             <div class="stat-card-title">课程总数</div>
             <div class="stat-card-value">{{ dashboardStats.courseCount || 0 }}</div>
             <div class="stat-card-actions">
-              <el-button type="primary" link @click="navigateTo('/courses')">
-                管理课程
-              </el-button>
+              <el-button type="primary" link @click="navigateTo('/courses')"> 管理课程 </el-button>
             </div>
           </el-card>
         </el-col>
-        
+
         <el-col :xs="24" :sm="12" :md="6">
           <el-card class="stat-card">
             <div class="stat-card-title">选课数量</div>
@@ -44,20 +40,18 @@
             </div>
           </el-card>
         </el-col>
-        
+
         <el-col :xs="24" :sm="12" :md="6">
           <el-card class="stat-card">
             <div class="stat-card-title">课程安排</div>
             <div class="stat-card-value">{{ dashboardStats.sectionCount || 0 }}</div>
             <div class="stat-card-actions">
-              <el-button type="primary" link @click="navigateTo('/sections')">
-                排课管理
-              </el-button>
+              <el-button type="primary" link @click="navigateTo('/sections')"> 排课管理 </el-button>
             </div>
           </el-card>
         </el-col>
       </template>
-      
+
       <!-- 教师视图 -->
       <template v-if="isTeacher">
         <el-col :xs="24" :sm="12" :md="8">
@@ -93,7 +87,7 @@
           </el-card>
         </el-col>
       </template>
-      
+
       <!-- 学生视图 -->
       <template v-if="isStudent">
         <el-col :xs="24" :sm="12" :md="8">
@@ -101,9 +95,7 @@
             <template #header>
               <div class="card-header">
                 <span>我的课程</span>
-                <el-button class="button" text @click="navigateTo('/enrollment')">
-                  选课
-                </el-button>
+                <el-button class="button" text @click="navigateTo('/enrollment')"> 选课 </el-button>
               </div>
             </template>
             <div v-if="loading" class="loading-placeholder">
@@ -130,7 +122,7 @@
         </el-col>
       </template>
     </el-row>
-    
+
     <!-- 最近课程 -->
     <el-row :gutter="20" class="recent-row">
       <el-col :span="24">
@@ -138,29 +130,20 @@
           <template #header>
             <div class="card-header">
               <span>最近课程</span>
-              <el-button class="button" text @click="navigateTo('/courses')">
-                查看全部
-              </el-button>
+              <el-button class="button" text @click="navigateTo('/courses')"> 查看全部 </el-button>
             </div>
           </template>
           <div v-if="loading" class="loading-placeholder">
             <el-skeleton :rows="5" animated />
           </div>
-          <el-table
-            v-else
-            :data="recentCourses"
-            style="width: 100%"
-            :empty-text="'暂无课程数据'"
-          >
+          <el-table v-else :data="recentCourses" style="width: 100%" :empty-text="'暂无课程数据'">
             <el-table-column prop="code" label="课程代码" width="120" />
             <el-table-column prop="name" label="课程名称" width="200" />
             <el-table-column prop="department_name" label="所属学院" />
             <el-table-column prop="credits" label="学分" width="80" />
             <el-table-column label="操作" width="150">
               <template #default="scope">
-                <el-button link type="primary" @click="viewCourse(scope.row.id)">
-                  查看
-                </el-button>
+                <el-button link type="primary" @click="viewCourse(scope.row.id)"> 查看 </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -171,94 +154,99 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
-import { useUserStore } from '../store/userStore';
-import { getDashboardStats, getRecentCourses, getTeacherSections, getStudentEnrollments } from '../api/dashboard';
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { useUserStore } from '../store/userStore'
+import {
+  getDashboardStats,
+  getRecentCourses,
+  getTeacherSections,
+  getStudentEnrollments,
+} from '../api/dashboard'
 
 export default {
   name: 'DashboardView',
   setup() {
-    const router = useRouter();
-    const userStore = useUserStore();
-    
-    const loading = ref(true);
+    const router = useRouter()
+    const userStore = useUserStore()
+
+    const loading = ref(true)
     const dashboardStats = reactive({
       userCount: 0,
       courseCount: 0,
       sectionCount: 0,
-      enrollmentCount: 0
-    });
-    
-    const teacherSections = ref([]);
-    const studentEnrollments = ref([]);
-    const recentCourses = ref([]);
-    
-    const user = computed(() => userStore.user || {});
-    const isAdmin = computed(() => userStore.isAdmin);
-    const isTeacher = computed(() => userStore.isTeacher);
-    const isStudent = computed(() => userStore.isStudent);
-    
+      enrollmentCount: 0,
+    })
+
+    const teacherSections = ref([])
+    const studentEnrollments = ref([])
+    const recentCourses = ref([])
+
+    const user = computed(() => userStore.user || {})
+    const isAdmin = computed(() => userStore.isAdmin)
+    const isTeacher = computed(() => userStore.isTeacher)
+    const isStudent = computed(() => userStore.isStudent)
+
     const fetchDashboardData = async () => {
-      loading.value = true;
-      
+      loading.value = true
+
       try {
         // 根据用户角色获取不同的数据
         if (isAdmin.value) {
           // 管理员 - 获取仪表盘统计信息
-          const statsResponse = await getDashboardStats();
+          const statsResponse = await getDashboardStats()
           if (statsResponse.success) {
-            Object.assign(dashboardStats, statsResponse.data);
+            Object.assign(dashboardStats, statsResponse.data)
           }
         } else if (isTeacher.value) {
           // 教师 - 获取自己的课程安排
-          const sectionsResponse = await getTeacherSections(user.value.id);
+          const sectionsResponse = await getTeacherSections(user.value.id)
           if (sectionsResponse.success) {
-            teacherSections.value = sectionsResponse.data;
+            teacherSections.value = sectionsResponse.data
           }
         } else if (isStudent.value) {
           // 学生 - 获取自己的选课记录
-          const enrollmentsResponse = await getStudentEnrollments(user.value.id);
+          const enrollmentsResponse = await getStudentEnrollments(user.value.id)
           if (enrollmentsResponse.success) {
-            studentEnrollments.value = enrollmentsResponse.data;
+            studentEnrollments.value = enrollmentsResponse.data
           }
         }
-        
+
         // 获取最近课程 - 所有用户角色都需要
-        const coursesResponse = await getRecentCourses();
+        const coursesResponse = await getRecentCourses()
         if (coursesResponse.success) {
-          recentCourses.value = coursesResponse.data;
+          recentCourses.value = coursesResponse.data
         }
       } catch (error) {
-        console.error('获取仪表盘数据失败', error);
-        ElMessage.error('获取仪表盘数据失败');
+        console.error('获取仪表盘数据失败', error)
+        ElMessage.error('获取仪表盘数据失败')
       } finally {
-        loading.value = false;
+        loading.value = false
       }
-    };
-    
+    }
+
     const navigateTo = (path) => {
-      router.push(path);
-    };
-    
+      router.push(path)
+    }
+
     const viewCourse = (id) => {
-      router.push(`/courses/${id}`);
-    };
-    
+      router.push(`/courses/${id}`)
+    }
+
     const getStatusText = (status) => {
       const statusMap = {
         enrolled: '已选',
         waitlisted: '等待',
-        dropped: '已退'
-      };
-      return statusMap[status] || status;
-    };
-    
+        dropped: '已退',
+      }
+      return statusMap[status] || status
+    }
+
     onMounted(() => {
-      fetchDashboardData();
-    });
-    
+      fetchDashboardData()
+    })
+
     return {
       user,
       isAdmin,
@@ -271,10 +259,10 @@ export default {
       studentEnrollments,
       navigateTo,
       viewCourse,
-      getStatusText
-    };
-  }
-};
+      getStatusText,
+    }
+  },
+}
 </script>
 
 <style scoped>
@@ -310,7 +298,7 @@ export default {
 .stat-card-value {
   font-size: 28px;
   font-weight: bold;
-  color: #409EFF;
+  color: #409eff;
   margin-bottom: 10px;
 }
 
@@ -333,7 +321,7 @@ export default {
 
 .course-item {
   padding: 10px 0;
-  border-bottom: 1px solid #EBEEF5;
+  border-bottom: 1px solid #ebeef5;
 }
 
 .course-item:last-child {
@@ -362,7 +350,7 @@ export default {
 .course-stats {
   font-size: 14px;
   margin-top: 5px;
-  color: #409EFF;
+  color: #409eff;
   font-weight: bold;
 }
 
@@ -373,14 +361,14 @@ export default {
 }
 
 .status-enrolled {
-  color: #67C23A;
+  color: #67c23a;
 }
 
 .status-waitlisted {
-  color: #E6A23C;
+  color: #e6a23c;
 }
 
 .status-dropped {
-  color: #F56C6C;
+  color: #f56c6c;
 }
 </style>
