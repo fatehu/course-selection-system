@@ -11,31 +11,25 @@ export const useAnnouncementStore = defineStore('announcement', {
   state: () => ({
     announcements: [],
     currentAnnouncement: null,
-    loading: false,
     error: null,
   }),
 
   actions: {
     // 获取所有公告
     async fetchAllAnnouncements() {
-      this.loading = true
       this.error = null
 
       try {
         const response = await getAllAnnouncements()
-        console.log(response)
 
-        if (response.success) {
-          this.announcements = response.data
-          // console.log(this.announcements)
+        if (response) {
+          this.announcements = response
         }
 
         return response.data
       } catch (error) {
         this.error = error.message || '获取公告列表失败'
         return []
-      } finally {
-        this.loading = false
       }
     },
 

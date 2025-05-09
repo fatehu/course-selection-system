@@ -49,8 +49,8 @@
             class="status-filter"
             style="margin-left: 10px"
           >
-            <el-option label="已发布" value="true" />
-            <el-option label="未发布" value="false" />
+            <el-option label="已发布" value="1" />
+            <el-option label="未发布" value="0" />
           </el-select>
         </el-col>
       </el-row>
@@ -68,7 +68,7 @@
         <el-table-column label="分类" width="120">
           <template #default="{ row }">
             <el-tag :type="categoryTagType(row.category)">
-              {{ row.category }}
+              {{ categoryLabels[row.category] }}
             </el-tag>
           </template>
         </el-table-column>
@@ -150,8 +150,8 @@ export default {
   },
   setup() {
     const router = useRouter()
-    let announcementStore = useAnnouncementStore()
-    let { announcements } = storeToRefs(announcementStore)
+    const announcementStore = useAnnouncementStore()
+    const { announcements } = storeToRefs(announcementStore)
     const userStore = useUserStore()
 
     const loading = ref(false)
@@ -162,12 +162,12 @@ export default {
     const pageSize = ref(10)
 
     // 分类选项
-    const categories = ref([
+    const categories = [
       { label: '系统公告', value: 'system' },
-      { label: '活动通知', value: 'activity' },
-      { label: '教学安排', value: 'education' },
-      { label: '其他', value: 'other' },
-    ])
+      { label: '活动通知', value: 'general' },
+      { label: '教学安排', value: 'course' },
+      { label: '考试安排', value: 'exam' },
+    ]
 
     // 搜索处理
     const handleSearch = () => {
@@ -207,20 +207,23 @@ export default {
     const categoryTagType = (category) => {
       const types = {
         system: 'primary',
-        activity: 'success',
-        education: 'warning',
-        other: 'info',
+        general: 'success',
+        course: 'warning',
+        exam: 'danger',
       }
       return types[category] || 'info'
+    }
+
+    const categoryLabels = {
+      system: '系统公告',
+      general: '活动通知',
+      course: '教学安排',
+      exam: '考试安排',
     }
 
     // 处理过的公告列表
     const filteredAnnouncements = computed(() => {
       let list = announcements.value || []
-
-      console.log(announcements.value)
-
-      console.log(list)
 
       // 根据关键词搜索
       if (searchKeyword.value) {
@@ -241,9 +244,9 @@ export default {
       }
 
       // 根据发布状态筛选
-      if (publishStatus.value !== '') {
+      if (publishStatus.value) {
         list = list.filter((ann) => {
-          return ann.is_published === (publishStatus.value === 'true')
+          return ann.is_published === +publishStatus.value
         })
       }
 
@@ -319,6 +322,7 @@ export default {
       handleFilter,
       handleSizeChange,
       handleCurrentChange,
+      categoryLabels,
       isAdmin: computed(() => userStore.isAdmin),
       isTeacher: computed(() => userStore.isTeacher),
     }
