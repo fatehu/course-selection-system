@@ -1,14 +1,31 @@
-// routes/announcements.js
 const express = require('express')
 const router = express.Router()
 const announcementController = require('../controllers/announcementController')
+const { verifyToken, checkRole } = require('../middleware/authMiddleware')
+
+router.use(verifyToken)
+
+router.get(
+  '/',
+  checkRole(['admin']),
+  announcementController.getAllAnnouncements
+)
 
 // 定义公告相关路由
-router.get('/api/announcements', announcementController.getAllAnnouncements)
-router.post('/api/announcements', announcementController.createAnnouncement)
-router.put('/api/announcements/:id', announcementController.updateAnnouncement)
+// router.get('/', announcementController.getAllAnnouncements)
+router.post(
+  '/',
+  checkRole(['admin']),
+  announcementController.createAnnouncement
+)
+router.put(
+  '/:id',
+  checkRole(['admin']),
+  announcementController.updateAnnouncement
+)
 router.delete(
-  '/api/announcements/:id',
+  '/:id',
+  checkRole(['admin']),
   announcementController.deleteAnnouncement
 )
 

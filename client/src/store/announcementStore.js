@@ -23,9 +23,11 @@ export const useAnnouncementStore = defineStore('announcement', {
 
       try {
         const response = await getAllAnnouncements()
+        console.log(response)
 
         if (response.success) {
           this.announcements = response.data
+          // console.log(this.announcements)
         }
 
         return response.data
