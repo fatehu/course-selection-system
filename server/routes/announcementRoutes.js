@@ -5,13 +5,9 @@ const { verifyToken, checkRole } = require('../middleware/authMiddleware')
 
 router.use(verifyToken)
 
-router.get(
-  '/',
-  checkRole(['admin']),
-  announcementController.getAllAnnouncements
-)
+router.get('/', announcementController.getAllAnnouncements)
 
-router.get('/:id', checkRole(['admin']), announcementController.getAnnouncement)
+router.get('/:id', announcementController.getAnnouncement)
 
 // router.get('/:id', announcementController.getAnnouncement)
 

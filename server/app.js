@@ -14,7 +14,8 @@ const dashboardRoutes = require('./routes/dashboardRoutes') // 添加仪表盘�
 const batchRoutes = require('./routes/batchRoutes')
 const announcementRoutes = require('./routes/announcementRoutes')
 // 添加AI辅导员路由
-const advisorRoutes = require('./routes/advisor');
+const advisorRoutes = require('./routes/advisor')
+const reviewRoutes = require('./routes/reviewRoutes')
 
 // 创建Express应用
 const app = express()
@@ -43,7 +44,8 @@ app.use('/api/departments', departmentRoutes)
 app.use('/api/dashboard', dashboardRoutes) // 添加仪表盘路由
 app.use('/api/batch', batchRoutes)
 app.use('/api/announcements', announcementRoutes)
-app.use('/api/advisor', advisorRoutes);
+app.use('/api/advisor', advisorRoutes)
+app.use('/api/reviews', reviewRoutes)
 
 // 根路由
 app.get('/', (req, res) => {

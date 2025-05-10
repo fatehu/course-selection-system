@@ -9,7 +9,9 @@ CREATE TABLE announcements (
   FOREIGN KEY (publisher_id) REFERENCES users(id)
 );`course_selection_system`
 
-ALTER TABLE announcements CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE reviews CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+SELECT * FROM announcements WHERE id = 1;
 
 -- 插入系统公告示例数据
 `course_selection_system`
@@ -39,3 +41,14 @@ VALUES
 ('校园运动会报名', '秋季运动会将于10月25日举行，报名截止10月10日。', 5, '2023-09-15 13:00:00', 1, 'general'),
 ('图书馆开放时间调整', '国庆期间图书馆开放时间调整为9:00-17:00。', 1, '2023-09-26 17:00:00', 1, 'general'),
 ('学生社团招新', '本周五下午社团广场招新，欢迎参与！', 6, '2023-09-18 12:00:00', 0, 'general'); -- 未发布
+
+-- 创建评价表
+CREATE TABLE reviews (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    course_id INT NOT NULL,
+    user_id INT NOT NULL,
+    content TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES courses(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
