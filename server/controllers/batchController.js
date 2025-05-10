@@ -1,5 +1,5 @@
 const User = require('../models/userModel');
-const bcrypt = require('bcrypt');
+const bcryptjs = require('bcryptjs');
 const { pool } = require('../config/db');
 
 // 批量插入学生
@@ -27,7 +27,7 @@ exports.batchInsertStudents = async (req, res) => {
     
     // 默认密码
     const defaultPassword = 'password123';
-    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+    const hashedPassword = await bcryptjs.hash(defaultPassword, 10);
     
     // 获取当前最大学生编号
     const [maxResult] = await connection.query(

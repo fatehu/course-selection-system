@@ -94,6 +94,9 @@
     <template v-else>
       <router-view />
     </template>
+
+    <!-- 添加AI辅导员组件 -->
+    <AdvisorChat />
   </div>
 </template>
 
@@ -110,6 +113,7 @@ import {
   Setting,
   ArrowDown,
 } from '@element-plus/icons-vue'
+import AdvisorChat from '@/components/AdvisorChat.vue';
 
 export default {
   name: 'App',
@@ -121,6 +125,7 @@ export default {
     User,
     Setting,
     ArrowDown,
+    AdvisorChat,
   },
   setup() {
     const route = useRoute()
