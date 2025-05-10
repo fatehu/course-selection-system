@@ -6,6 +6,30 @@
       </el-col>
     </el-row>
 
+    <h2>最新公告</h2>
+    <div v-if="loading" class="loading-placeholder">
+      <el-skeleton :rows="3" animated />
+    </div>
+    <div v-else-if="publishedAnnouncements.length === 0" class="empty-placeholder">暂无公告</div>
+    <div v-else>
+      <el-card
+        v-for="announcement in publishedAnnouncements"
+        :key="announcement.id"
+        class="announcement-card"
+      >
+        <template #header>
+          <div class="card-header">
+            <span>{{ announcement.title }}</span>
+          </div>
+        </template>
+        <div class="announcement-content">
+          <p>{{ truncateContent(announcement.content) }}</p>
+          <p>发布者: {{ announcement.publisher_name }}</p>
+          <p>发布时间: {{ formatDate(announcement.publish_time) }}</p>
+        </div>
+      </el-card>
+    </div>
+
     <el-row :gutter="20" class="stats-row">
       <!-- 管理员视图 -->
       <template v-if="isAdmin">
@@ -158,6 +182,8 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../store/userStore'
+import { useAnnouncementStore } from '../store/announcementStore'
+import dayjs from 'dayjs'
 import {
   getDashboardStats,
   getRecentCourses,
@@ -178,6 +204,33 @@ export default {
       sectionCount: 0,
       enrollmentCount: 0,
     })
+
+    const announcementStore = useAnnouncementStore()
+
+    // 获取所有公告
+    const announcements = computed(() => announcementStore.announcements)
+
+    // 只显示已发布的公告
+    const publishedAnnouncements = computed(() =>
+      announcements.value.filter((announcement) => announcement.is_published),
+    )
+
+    // 格式化日期
+    const formatDate = (date) => {
+      return dayjs(date).format('YYYY-MM-DD HH:mm:ss')
+    }
+
+    // 获取所有公告
+    const fetchAnnouncements = async () => {
+      loading.value = true
+      try {
+        await announcementStore.fetchAllAnnouncements()
+      } catch (error) {
+        console.error('获取公告列表失败', error)
+      } finally {
+        loading.value = false
+      }
+    }
 
     const teacherSections = ref([])
     const studentEnrollments = ref([])
@@ -243,8 +296,20 @@ export default {
       return statusMap[status] || status
     }
 
+    // 内容截断
+    const truncateContent = (content) => {
+      if (!content) return ''
+
+      // 使用 DOMParser 解析 HTML
+      const doc = new DOMParser().parseFromString(content, 'text/html')
+      const plainText = doc.body.textContent || ''
+
+      return plainText
+    }
+
     onMounted(() => {
       fetchDashboardData()
+      fetchAnnouncements()
     })
 
     return {
@@ -257,9 +322,12 @@ export default {
       recentCourses,
       teacherSections,
       studentEnrollments,
+      formatDate,
+      publishedAnnouncements,
       navigateTo,
       viewCourse,
       getStatusText,
+      truncateContent,
     }
   },
 }
@@ -370,5 +438,31 @@ export default {
 
 .status-dropped {
   color: #f56c6c;
+}
+
+.dashboard-container {
+  padding: 20px;
+}
+
+.announcement-card {
+  margin-bottom: 20px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.loading-placeholder,
+.empty-placeholder {
+  padding: 20px 0;
+  text-align: center;
+  color: #909399;
+}
+
+.announcement-content {
+  white-space: pre-line;
+  line-height: 1.6;
 }
 </style>

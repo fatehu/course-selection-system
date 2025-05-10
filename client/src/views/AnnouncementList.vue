@@ -279,6 +279,7 @@ export default {
       try {
         await announcementStore.deleteAnnouncement(id)
         ElMessage.success('删除成功')
+        loadAnnouncements()
       } catch (error) {
         console.error('删除公告失败:', error)
         ElMessage.error(error.message || '删除失败')

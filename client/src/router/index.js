@@ -19,6 +19,7 @@ import UserProfile from '../views/userProfile.vue'
 import NotFound from '../views/NotFound.vue'
 import AnnouncementList from '@/views/AnnouncementList.vue'
 import AnnouncementForm from '@/views/AnnouncementForm.vue'
+import AnnouncementDetail from '@/views/AnnouncementDetail.vue'
 
 const routes = [
   {
@@ -147,6 +148,13 @@ const routes = [
     path: '/announcement/:id/edit',
     name: 'announcementEdit',
     component: AnnouncementForm,
+    meta: { requiresAuth: true },
+  },
+  // 公告详情页面
+  {
+    path: '/announcement/:id',
+    name: 'announcementDetail',
+    component: AnnouncementDetail,
     meta: { requiresAuth: true },
   },
   {

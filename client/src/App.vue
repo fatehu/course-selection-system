@@ -1,5 +1,6 @@
 <template>
   <div id="app">
+    <!--已登录且不是登录页 显示侧边栏  -->
     <template v-if="isAuthenticated && !isLoginPage">
       <el-container class="app-container">
         <el-aside width="220px" class="app-aside">
@@ -113,7 +114,7 @@ import {
   Setting,
   ArrowDown,
 } from '@element-plus/icons-vue'
-import AdvisorChat from '@/components/AdvisorChat.vue';
+import AdvisorChat from '@/components/AdvisorChat.vue'
 
 export default {
   name: 'App',

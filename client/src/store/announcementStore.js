@@ -115,7 +115,7 @@ export const useAnnouncementStore = defineStore('announcement', {
       try {
         const response = await deleteAnnouncement(id)
 
-        if (response.success) {
+        if (response) {
           // 从公告列表中移除
           this.announcements = this.announcements.filter((a) => a.id !== id)
 

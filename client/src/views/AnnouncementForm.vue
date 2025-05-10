@@ -67,7 +67,6 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { storeToRefs } from 'pinia'
 import RichTextEditor from '@/components/RichTextEditor.vue'
 import { useAnnouncementStore } from '@/store/announcementStore'
 
