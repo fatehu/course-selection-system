@@ -44,7 +44,7 @@
             </el-menu-item>
 
             <el-menu-item v-if="isAdmin" index="/announcement">
-              <el-icon><setting /></el-icon>
+              <el-icon><Promotion /></el-icon>
               <span>公告发布</span>
             </el-menu-item>
 

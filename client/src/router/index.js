@@ -1,26 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '../store/userStore'
 
-// 页面组件
-import Login from '../views/Login.vue'
-import Dashboard from '../views/DashBoard.vue'
-import CourseList from '../views/CourseList.vue'
-import CourseDetail from '../views/CourseDetail.vue'
-import CourseForm from '../views/CourseForm.vue'
-import SectionList from '../views/SectionList.vue'
-import SectionDetail from '../views/SectionDetail.vue'
-import SectionForm from '../views/SectionForm.vue'
-import StudentEnrollment from '../views/StudentEnrollment.vue'
-import EnrollmentList from '../views/EnrollmentList.vue'
-import EnrollmentDetail from '../views/EnrollmentDetail.vue'
-import UserList from '../views/UserList.vue'
-import UserForm from '../views/UserForm.vue'
-import UserProfile from '../views/userProfile.vue'
-import NotFound from '../views/NotFound.vue'
-import AnnouncementList from '@/views/AnnouncementList.vue'
-import AnnouncementForm from '@/views/AnnouncementForm.vue'
-import AnnouncementDetail from '@/views/AnnouncementDetail.vue'
-
 const routes = [
   {
     path: '/',
@@ -29,138 +9,138 @@ const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: Login,
+    component: () => import('../views/Login.vue'),
     meta: { requiresAuth: false },
   },
   {
     path: '/dashboard',
     name: 'Dashboard',
-    component: Dashboard,
+    component: () => import('../views/DashBoard.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/courses',
     name: 'CourseList',
-    component: CourseList,
+    component: () => import('../views/CourseList.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/courses/:id',
     name: 'CourseDetail',
-    component: CourseDetail,
+    component: () => import('../views/CourseDetail.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/courses/create',
     name: 'CourseCreate',
-    component: CourseForm,
+    component: () => import('../views/CourseForm.vue'),
     meta: { requiresAuth: true, roles: ['admin', 'teacher'] },
   },
   {
     path: '/courses/:id/edit',
     name: 'CourseEdit',
-    component: CourseForm,
+    component: () => import('../views/CourseForm.vue'),
     meta: { requiresAuth: true, roles: ['admin', 'teacher'] },
   },
   {
     path: '/sections',
     name: 'SectionList',
-    component: SectionList,
+    component: () => import('../views/SectionList.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/sections/:id',
     name: 'SectionDetail',
-    component: SectionDetail,
+    component: () => import('../views/SectionDetail.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/sections/create',
     name: 'SectionCreate',
-    component: SectionForm,
+    component: () => import('../views/SectionForm.vue'),
     meta: { requiresAuth: true, roles: ['admin', 'teacher'] },
   },
   {
     path: '/sections/:id/edit',
     name: 'SectionEdit',
-    component: SectionForm,
+    component: () => import('../views/SectionForm.vue'),
     meta: { requiresAuth: true, roles: ['admin', 'teacher'] },
   },
   {
     path: '/enrollment',
     name: 'StudentEnrollment',
-    component: StudentEnrollment,
+    component: () => import('../views/StudentEnrollment.vue'),
     meta: { requiresAuth: true, roles: ['student'] },
   },
   {
     path: '/enrollments',
     name: 'EnrollmentList',
-    component: EnrollmentList,
+    component: () => import('../views/EnrollmentList.vue'),
     meta: { requiresAuth: true, roles: ['admin', 'teacher'] },
   },
   {
     path: '/enrollments/:id',
     name: 'EnrollmentDetail',
-    component: EnrollmentDetail,
+    component: () => import('../views/EnrollmentDetail.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/users',
     name: 'UserList',
-    component: UserList,
+    component: () => import('../views/UserList.vue'),
     meta: { requiresAuth: true, roles: ['admin'] },
   },
   {
     path: '/users/create',
     name: 'UserCreate',
-    component: UserForm,
+    component: () => import('../views/UserForm.vue'),
     meta: { requiresAuth: true, roles: ['admin'] },
   },
   {
     path: '/users/:id/edit',
     name: 'UserEdit',
-    component: UserForm,
+    component: () => import('../views/UserForm.vue'),
     meta: { requiresAuth: true, roles: ['admin'] },
   },
   // 个人信息页路由
   {
     path: '/profile',
     name: 'UserProfile',
-    component: UserProfile,
+    component: () => import('../views/userProfile.vue'),
     meta: { requiresAuth: true },
   },
   // 公告页面
   {
     path: '/announcement',
     name: 'Announcement',
-    component: AnnouncementList,
+    component: () => import('@/views/AnnouncementList.vue'),
     meta: { requiresAuth: true },
   },
   // 公告发布页面
   {
     path: '/announcement/create',
     name: 'AnnouncementCreate',
-    component: AnnouncementForm,
+    component: () => import('@/views/AnnouncementForm.vue'),
     meta: { requiresAuth: true },
   },
   // 公告编辑页面
   {
     path: '/announcement/:id/edit',
     name: 'announcementEdit',
-    component: AnnouncementForm,
+    component: () => import('@/views/AnnouncementForm.vue'),
     meta: { requiresAuth: true },
   },
   // 公告详情页面
   {
     path: '/announcement/:id',
     name: 'announcementDetail',
-    component: AnnouncementDetail,
+    component: () => import('@/views/AnnouncementDetail.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
-    component: NotFound,
+    component: () => import('../views/NotFound.vue'),
   },
 ]
 
