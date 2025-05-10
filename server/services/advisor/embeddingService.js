@@ -116,7 +116,7 @@ class EmbeddingService {
         
         try {
           const response = await this.openai.embeddings.create({
-            model: "text-embedding-3-large",
+            model: "text-embedding-v3",
             input: batch
           });
           
