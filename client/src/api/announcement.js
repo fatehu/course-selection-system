@@ -13,8 +13,12 @@ export const getAllAnnouncements = async () => {
 
 // 获取单个公告
 export const getAnnouncement = async (id) => {
+  console.log(id)
+
   try {
     const response = await api.get(`http://localhost:3000/api/announcements/${id}`)
+    console.log(response)
+
     return response.data
   } catch (error) {
     console.error('获取公告失败:', error)
@@ -26,6 +30,8 @@ export const getAnnouncement = async (id) => {
 export const createAnnouncement = async (announcementData) => {
   try {
     const response = await api.post(`http://localhost:3000/api/announcements`, announcementData)
+    console.log(response)
+
     return response.data
   } catch (error) {
     console.error('创建公告失败:', error)

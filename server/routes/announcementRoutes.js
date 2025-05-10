@@ -11,8 +11,11 @@ router.get(
   announcementController.getAllAnnouncements
 )
 
+router.get('/:id', checkRole(['admin']), announcementController.getAnnouncement)
+
+// router.get('/:id', announcementController.getAnnouncement)
+
 // 定义公告相关路由
-// router.get('/', announcementController.getAllAnnouncements)
 router.post(
   '/',
   checkRole(['admin']),

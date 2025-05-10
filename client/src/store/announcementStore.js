@@ -40,12 +40,13 @@ export const useAnnouncementStore = defineStore('announcement', {
 
       try {
         const response = await getAnnouncement(id)
+        console.log(response)
 
-        if (response.success) {
-          this.currentAnnouncement = response.data
+        if (response) {
+          this.currentAnnouncement = response
         }
 
-        return response.data
+        return response
       } catch (error) {
         this.error = error.message || '获取公告详情失败'
         return null

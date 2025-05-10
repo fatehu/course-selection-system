@@ -195,7 +195,12 @@ export default {
     // 内容截断
     const truncateContent = (content) => {
       if (!content) return ''
-      return content.length > 50 ? content.substring(0, 50) + '...' : content
+
+      // 使用 DOMParser 解析 HTML
+      const doc = new DOMParser().parseFromString(content, 'text/html')
+      const plainText = doc.body.textContent || ''
+
+      return plainText.length > 50 ? plainText.substring(0, 50) + '...' : plainText
     }
 
     // 日期格式化
@@ -281,9 +286,9 @@ export default {
     }
 
     // 路由跳转
-    const createAnnouncement = () => router.push('/announcements/create')
-    const editAnnouncement = (id) => router.push(`/announcements/${id}/edit`)
-    const viewDetail = (id) => router.push(`/announcements/${id}`)
+    const createAnnouncement = () => router.push('/announcement/create')
+    const editAnnouncement = (id) => router.push(`/announcement/${id}/edit`)
+    const viewDetail = (id) => router.push(`/announcement/${id}`)
 
     // 分页处理
     const handleSizeChange = (val) => {

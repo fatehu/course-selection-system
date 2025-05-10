@@ -18,6 +18,7 @@ import UserForm from '../views/UserForm.vue'
 import UserProfile from '../views/userProfile.vue'
 import NotFound from '../views/NotFound.vue'
 import AnnouncementList from '@/views/AnnouncementList.vue'
+import AnnouncementForm from '@/views/AnnouncementForm.vue'
 
 const routes = [
   {
@@ -127,11 +128,25 @@ const routes = [
     component: UserProfile,
     meta: { requiresAuth: true },
   },
-  // 公告发布页面
+  // 公告页面
   {
     path: '/announcement',
     name: 'Announcement',
     component: AnnouncementList,
+    meta: { requiresAuth: true },
+  },
+  // 公告发布页面
+  {
+    path: '/announcement/create',
+    name: 'AnnouncementCreate',
+    component: AnnouncementForm,
+    meta: { requiresAuth: true },
+  },
+  // 公告编辑页面
+  {
+    path: '/announcement/:id/edit',
+    name: 'announcementEdit',
+    component: AnnouncementForm,
     meta: { requiresAuth: true },
   },
   {
