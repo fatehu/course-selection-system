@@ -1,6 +1,7 @@
 // course-selection-system/client/src/store/reviewStore.js
 import { defineStore } from 'pinia'
 import { getReviewsByCourse, submitReviewApi } from '@/api/review'
+import { getAllUsers } from '../api/user'
 
 export const useReviewStore = defineStore('review', {
   state: () => ({
@@ -25,6 +26,25 @@ export const useReviewStore = defineStore('review', {
         return response
       } catch (error) {
         this.error = error.message || '获取课程评价失败'
+        return []
+      }
+    },
+
+    async getAuthorName(userId) {
+      this.error = null
+
+      try {
+        const response = await getAllUsers(userId)
+
+        console.log('获取个人信息:', response)
+
+        if (response) {
+          this.reviews = response
+        }
+
+        return response
+      } catch (error) {
+        this.error = error.message || '获取个人信息'
         return []
       }
     },

@@ -42,7 +42,11 @@ VALUES
 ('图书馆开放时间调整', '国庆期间图书馆开放时间调整为9:00-17:00。', 1, '2023-09-26 17:00:00', 1, 'general'),
 ('学生社团招新', '本周五下午社团广场招新，欢迎参与！', 6, '2023-09-18 12:00:00', 0, 'general'); -- 未发布
 
-INSERT INTO reviews (course_id, user_id, content) VALUES (1, 1, '这门课程很不错！');
+INSERT INTO reviews (course_id, user_id, content) VALUES (1, 3, '这门课程很不错！');
+
+
+
+
 
 -- 创建评价表
 CREATE TABLE reviews (

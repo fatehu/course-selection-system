@@ -98,7 +98,7 @@
       <div v-else>
         <div v-for="review in reviews" :key="review.id" class="review-item">
           <div class="review-header">
-            <span class="review-author">{{ review.author_name }}</span>
+            <span class="review-author">{{ authorNames[review.user_id] }}</span>
             <span class="review-time">{{ formatDate(review.created_at) }}</span>
           </div>
           <div class="review-content">{{ review.content }}</div>
@@ -120,7 +120,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useCourseStore } from '../store/courseStore'
@@ -151,6 +151,11 @@ export default {
     const isTeacher = computed(() => userStore.isTeacher)
     const isStudent = computed(() => userStore.isStudent)
     const userId = computed(() => userStore.userId)
+    const authorNames = ref({})
+    const getAuthorName = async (userId) => {
+      const user = await userStore.getUserById(userId)
+      authorNames.value[userId] = user.name
+    }
 
     // 当前课程信息
     const course = computed(() => courseStore.currentCourse)
@@ -207,6 +212,10 @@ export default {
 
       try {
         await reviewStore.fetchReview(courseId)
+        // 获取所有评价的作者名字
+        reviews.value.forEach((review) => {
+          getAuthorName(review.user_id)
+        })
       } catch (error) {
         console.error('获取课程评价失败', error)
         ElMessage.error('获取课程评价失败')
@@ -311,6 +320,8 @@ export default {
       submitReview,
       isFull,
       formatDate,
+      getAuthorName,
+      authorNames,
     }
   },
 }
