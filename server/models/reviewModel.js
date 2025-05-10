@@ -1,24 +1,16 @@
 // course-selection-system/server/models/reviewModel.js
 const { pool } = require('../config/db')
+const dayjs = require('dayjs')
 
 class Review {
-  // 获取所有课程评价
-  static async getAll() {
+  // 获取指定课程的所有评价
+  static async getByCourse(courseId) {
     try {
-      const [reviews] = await pool.query('SELECT * FROM reviews')
-      return reviews
-    } catch (error) {
-      throw error
-    }
-  }
-
-  // 获取单个课程评价
-  static async getById(id) {
-    try {
-      const [reviews] = await pool.query('SELECT * FROM reviews WHERE id = ?', [
-        id,
-      ])
-      return reviews[0]
+      const [rows] = await pool.query(
+        'SELECT * FROM reviews WHERE course_id = ?',
+        [courseId]
+      )
+      return rows
     } catch (error) {
       throw error
     }
@@ -27,67 +19,19 @@ class Review {
   // 创建课程评价
   static async create(reviewData) {
     try {
-      const { course_id, reviewer_id, content, rating } = reviewData
+      console.log(reviewData)
+
+      const { course_id, user_id, content } = reviewData
       const [result] = await pool.query(
-        'INSERT INTO reviews (course_id, reviewer_id, content, rating) VALUES (?, ?, ?, ?)',
-        [course_id, reviewer_id, content, rating]
+        'INSERT INTO reviews (course_id, user_id, content) VALUES (?, ?, ?)',
+        [course_id, user_id, content]
       )
+
       return {
         id: result.insertId,
         ...reviewData,
+        created_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       }
-    } catch (error) {
-      throw error
-    }
-  }
-
-  // 更新课程评价
-  static async update(id, reviewData) {
-    try {
-      const { content, rating } = reviewData
-      const [result] = await pool.query(
-        'UPDATE reviews SET content = ?, rating = ? WHERE id = ?',
-        [content, rating, id]
-      )
-      return result.affectedRows > 0
-    } catch (error) {
-      throw error
-    }
-  }
-
-  // 删除课程评价
-  static async delete(id) {
-    try {
-      const [result] = await pool.query('DELETE FROM reviews WHERE id = ?', [
-        id,
-      ])
-      return result.affectedRows > 0
-    } catch (error) {
-      throw error
-    }
-  }
-
-  // 根据课程 ID 获取课程评价
-  static async getByCourseId(course_id) {
-    try {
-      const [reviews] = await pool.query(
-        'SELECT * FROM reviews WHERE course_id = ?',
-        [course_id]
-      )
-      return reviews
-    } catch (error) {
-      throw error
-    }
-  }
-
-  // 根据评价者 ID 获取课程评价
-  static async getByReviewerId(reviewer_id) {
-    try {
-      const [reviews] = await pool.query(
-        'SELECT * FROM reviews WHERE reviewer_id = ?',
-        [reviewer_id]
-      )
-      return reviews
     } catch (error) {
       throw error
     }

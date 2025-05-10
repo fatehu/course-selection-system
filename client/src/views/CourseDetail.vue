@@ -99,7 +99,7 @@
         <div v-for="review in reviews" :key="review.id" class="review-item">
           <div class="review-header">
             <span class="review-author">{{ review.author_name }}</span>
-            <span class="review-time">{{ review.created_at }}</span>
+            <span class="review-time">{{ formatDate(review.created_at) }}</span>
           </div>
           <div class="review-content">{{ review.content }}</div>
         </div>
@@ -128,6 +128,7 @@ import { useSectionStore } from '../store/sectionStore'
 import { useEnrollmentStore } from '../store/enrollmentStore'
 import { useUserStore } from '../store/userStore'
 import { useReviewStore } from '../store/reviewStore' // 新增的评价 store
+import dayjs from 'dayjs'
 
 export default {
   name: 'CourseDetailView',
@@ -164,7 +165,12 @@ export default {
     const newReview = ref({
       content: '',
       course_id: courseId,
+      user_id: userId.value,
     })
+
+    const formatDate = (date) => {
+      return dayjs(date).format('YYYY-MM-DD HH:mm:ss')
+    }
 
     // 获取课程详情
     const fetchCourseDetail = async () => {
@@ -256,9 +262,12 @@ export default {
     // 提交评价
     const submitReview = async () => {
       try {
+        console.log(newReview.value)
         const response = await reviewStore.submitReview(newReview.value)
+        console.log(newReview.value)
+        console.log(response)
 
-        if (response.success) {
+        if (response) {
           ElMessage.success('评价提交成功')
           // 刷新评价数据
           fetchReviews()
@@ -301,6 +310,7 @@ export default {
       enrollSection,
       submitReview,
       isFull,
+      formatDate,
     }
   },
 }

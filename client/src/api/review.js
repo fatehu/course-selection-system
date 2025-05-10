@@ -18,6 +18,8 @@ export const getReviewsByCourse = async (courseId) => {
 export const submitReviewApi = async (reviewData) => {
   try {
     const response = await api.post(`http://localhost:3000/api/reviews`, reviewData)
+    console.log(response)
+
     return response.data
   } catch (error) {
     console.error('提交课程评价失败:', error)
