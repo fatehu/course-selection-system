@@ -1,39 +1,14 @@
-// server/services/advisor/vectorStore.js
-const fs = require('fs');
+const fs = require('fs-extra');
 const path = require('path');
-const { generateEmbedding } = require('./embeddingService');
 
-class SimpleVectorStore {
-  constructor() {
-    this.documents = []; // 存储文档内容
-    this.embeddings = []; // 存储对应的嵌入向量
+class VectorStore {
+  constructor(options = {}) {
+    this.documents = [];
+    this.embeddings = [];
+    this.storePath = options.storePath || path.join(process.cwd(), 'data/vector-store.json');
   }
   
-  // 添加文档和对应的嵌入向量
-  async addDocument(document, embedding) {
-    this.documents.push(document);
-    this.embeddings.push(embedding);
-    return this.documents.length - 1; // 返回文档ID
-  }
-  
-  // 批量添加文档
-  async addDocuments(documents) {
-    console.log(`正在为${documents.length}个文档生成嵌入向量...`);
-    
-    for (let i = 0; i < documents.length; i++) {
-      // 每添加10个文档记录一次进度
-      if (i % 10 === 0) {
-        console.log(`进度: ${i}/${documents.length}`);
-      }
-      
-      const embedding = await generateEmbedding(documents[i]);
-      await this.addDocument(documents[i], embedding);
-    }
-    
-    console.log(`成功添加${documents.length}个文档到向量存储`);
-  }
-  
-  // 计算两个向量的余弦相似度
+  // 计算余弦相似度
   cosineSimilarity(vecA, vecB) {
     let dotProduct = 0;
     let normA = 0;
@@ -55,60 +30,80 @@ class SimpleVectorStore {
     return dotProduct / (normA * normB);
   }
   
-  // 相似度搜索
-  async similaritySearch(query, k = 5) {
-    // 为查询生成嵌入向量
-    const queryEmbedding = await generateEmbedding(query);
+  // 添加文档到存储
+  addDocument(document, embedding) {
+    this.documents.push(document);
+    this.embeddings.push(embedding);
+    return this.documents.length - 1; // 返回文档索引
+  }
+  
+  // 批量添加文档
+  addDocuments(documents, embeddings) {
+    if (documents.length !== embeddings.length) {
+      throw new Error("文档数量与嵌入数量不匹配");
+    }
     
-    // 计算所有文档与查询的相似度
+    for (let i = 0; i < documents.length; i++) {
+      if (embeddings[i]) { // 跳过null嵌入（处理失败的）
+        this.addDocument(documents[i], embeddings[i]);
+      }
+    }
+    
+    console.log(`添加了${documents.length}个文档到向量存储`);
+  }
+  
+  // 相似度搜索
+  similaritySearch(queryEmbedding, k = 5) {
+    if (this.embeddings.length === 0) {
+      return [];
+    }
+    
+    // 计算查询与所有文档的相似度
     const similarities = this.embeddings.map((embedding, index) => ({
-      documentIndex: index,
+      index,
       similarity: this.cosineSimilarity(queryEmbedding, embedding)
     }));
     
-    // 按相似度降序排序并取前k个
-    const topResults = similarities
+    // 排序并获取前k个结果
+    return similarities
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, k);
-    
-    // 返回相关文档
-    return topResults.map(result => ({
-      pageContent: this.documents[result.documentIndex],
-      similarity: result.similarity
-    }));
+      .slice(0, k)
+      .map(result => ({
+        document: this.documents[result.index],
+        similarity: result.similarity
+      }));
   }
   
   // 保存向量存储到文件
-  async save(filePath) {
+  save() {
     const data = {
       documents: this.documents,
       embeddings: this.embeddings
     };
     
-    fs.writeFileSync(filePath, JSON.stringify(data));
-    console.log(`向量存储已保存到: ${filePath}`);
+    fs.ensureDirSync(path.dirname(this.storePath));
+    fs.writeFileSync(this.storePath, JSON.stringify(data));
+    console.log(`向量存储保存至: ${this.storePath}`);
   }
   
   // 从文件加载向量存储
-  async load(filePath) {
-    if (!fs.existsSync(filePath)) {
-      console.warn(`文件不存在: ${filePath}`);
+  load() {
+    if (!fs.existsSync(this.storePath)) {
+      console.log(`向量存储文件不存在: ${this.storePath}`);
       return false;
     }
     
     try {
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(this.storePath, 'utf8'));
       this.documents = data.documents;
       this.embeddings = data.embeddings;
-      console.log(`从文件加载了${this.documents.length}个文档和向量`);
+      console.log(`成功加载${this.documents.length}个文档和嵌入向量`);
       return true;
     } catch (error) {
-      console.error(`加载向量存储失败: ${error.message}`);
+      console.error("加载向量存储失败:", error);
       return false;
     }
   }
 }
 
-module.exports = {
-  SimpleVectorStore
-};
+module.exports = VectorStore;
