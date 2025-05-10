@@ -56,7 +56,7 @@ export const updateAnnouncement = async (id, announcementData) => {
 // 删除公告
 export const deleteAnnouncement = async (id) => {
   try {
-    const response = await axios.delete(`http://localhost:3000/api/announcements/${id}`)
+    const response = await api.delete(`http://localhost:3000/api/announcements/${id}`)
     return response.data
   } catch (error) {
     console.error('删除公告失败:', error)
