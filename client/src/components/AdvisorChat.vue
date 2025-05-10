@@ -17,7 +17,7 @@
           :key="index" 
           :class="['message', message.role === 'user' ? 'user-message' : 'advisor-message']"
         >
-          <div class="message-content">{{ message.content }}</div>
+          <div class="message-content" v-html="formatMessage(message.content)"></div>
         </div>
         
         <div v-if="loading" class="message advisor-message">
@@ -56,20 +56,31 @@ export default {
     };
   },
   mounted() {
-    // 添加初始欢迎消息
     this.messages.push({
       role: 'advisor',
       content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。例如，你可以问我"电子信息工程专业的核心课程有哪些？"或"计算机科学与技术专业需要修多少学分才能毕业？"'
     });
   },
   methods: {
+    formatMessage(content) {
+      // Markdown基础格式转换
+      const formatted = content
+        // 加粗处理
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        // 数字列表处理
+        .replace(/(\d+\.\s+.*(?:\n|$))/g, '<div class="list-item">$1</div>')
+        // 换行处理
+        .replace(/\n/g, '<br>');
+      
+      // 二次处理列表项的换行
+      return formatted.replace(/<br><div class="list-item">/g, '<div class="list-item">');
+    },
     toggleExpand() {
       this.isExpanded = !this.isExpanded;
     },
     async sendMessage() {
       if (!this.userInput.trim() || this.loading) return;
       
-      // 添加用户消息
       this.messages.push({
         role: 'user',
         content: this.userInput.trim()
@@ -79,32 +90,24 @@ export default {
       this.userInput = '';
       this.loading = true;
       
-      // 滚动到底部
       this.$nextTick(() => {
         this.scrollToBottom();
       });
       
       try {
         const response = await axios.post('advisor/ask', { question });
-        console.log('API响应:', response);  // 添加日志查看实际结构
-        
-        // 修改这一行，根据实际响应结构调整
         this.messages.push({
           role: 'advisor',
           content: response.answer || response.data?.answer || response || "收到响应但格式不正确"
         });
       } catch (error) {
         console.error('获取回答失败:', error);
-        
-        // 添加错误消息
         this.messages.push({
           role: 'advisor',
           content: '抱歉，我暂时无法回答您的问题。请稍后再试。'
         });
       } finally {
         this.loading = false;
-        
-        // 滚动到底部
         this.$nextTick(() => {
           this.scrollToBottom();
         });
@@ -200,6 +203,40 @@ export default {
   border-radius: 18px;
   max-width: 80%;
   word-wrap: break-word;
+  line-height: 1.5;
+}
+
+/* 加粗文本样式 */
+.message-content ::v-deep strong {
+  color: #2c3e50;
+  font-weight: 600;
+  padding: 0 2px;
+}
+
+/* 列表项样式 */
+.message-content ::v-deep .list-item {
+  margin: 8px 0;
+  padding-left: 20px;
+  position: relative;
+  line-height: 1.6;
+}
+
+.message-content ::v-deep .list-item::before {
+  content: "•";
+  color: #4285f4;
+  position: absolute;
+  left: 0;
+  font-weight: bold;
+  font-size: 1.2em;
+}
+
+/* 调整用户消息中的样式 */
+.user-message .message-content ::v-deep strong {
+  color: #e3f2fd;
+}
+
+.user-message .message-content ::v-deep .list-item::before {
+  color: #bbdefb;
 }
 
 .user-message .message-content {
