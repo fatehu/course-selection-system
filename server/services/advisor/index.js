@@ -14,7 +14,7 @@ class AdvisorService {
     // 配置文件路径
     this.pdfPaths = [
       path.join(process.cwd(), 'data/merits.pdf'),
-      path.join(process.cwd(), 'data/public.pdf'),
+      // path.join(process.cwd(), 'data/public.pdf'),
       path.join(process.cwd(), 'data/student.pdf')
     ];
     

@@ -31,7 +31,7 @@ CREATE TABLE courses (
     FOREIGN KEY (department_id) REFERENCES departments(id)
 );
 
--- 课程章节表（具体上课时间、地点）
+-- 课程安排表（具体上课时间、地点）
 CREATE TABLE sections (
     id INT AUTO_INCREMENT PRIMARY KEY,
     course_id INT NOT NULL,

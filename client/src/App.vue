@@ -30,7 +30,7 @@
 
             <el-menu-item v-if="isAdmin || isTeacher" index="/sections">
               <el-icon><collection /></el-icon>
-              <span>课程章节</span>
+              <span>课程安排</span>
             </el-menu-item>
 
             <el-menu-item v-if="isAdmin || isTeacher" index="/enrollments">
@@ -51,6 +51,12 @@
             <el-menu-item index="/profile">
               <el-icon><user /></el-icon>
               <span>个人信息</span>
+            </el-menu-item>
+
+              <!-- 新增AI辅导员菜单项 -->
+            <el-menu-item index="/advisor">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>AI辅导员</span>
             </el-menu-item>
           </el-menu>
         </el-aside>
@@ -92,7 +98,7 @@
       </el-container>
 
       <!-- 添加AI辅导员组件 -->
-      <AdvisorChat />
+      <AdvisorChat v-if="!isAdvisorPage" />
     </template>
 
     <template v-else>
@@ -115,6 +121,8 @@ import {
   Setting,
   Promotion,
   ArrowDown,
+  ChatDotRound,
+
 } from '@element-plus/icons-vue'
 import AdvisorChat from '@/components/AdvisorChat.vue'
 
@@ -130,6 +138,7 @@ export default {
     ArrowDown,
     AdvisorChat,
     Promotion,
+    ChatDotRound,
   },
   setup() {
     const route = useRoute()
@@ -142,6 +151,11 @@ export default {
     const activeMenu = computed(() => {
       return route.path
     })
+
+    const isAdvisorPage = computed(() => {
+      return route.path === '/advisor';
+    });
+
 
     // 判断是否是登录页
     const isLoginPage = computed(() => {
@@ -183,6 +197,7 @@ export default {
       isStudent,
       toggleSidebar,
       handleCommand,
+      isAdvisorPage,
     }
   },
 }
