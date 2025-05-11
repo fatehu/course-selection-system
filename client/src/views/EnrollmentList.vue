@@ -225,8 +225,11 @@
       const teacherEnrollments = computed(() => {
         if (!isTeacher.value) return [];
         
+        // 确保类型一致
+        const currentUserId = parseInt(userId.value);
+        
         let enrollments = allEnrollments.value.filter(
-          enrollment => enrollment.teacher_id === userId.value
+          enrollment => enrollment.teacher_id === currentUserId
         );
         
         // 根据关键词搜索
