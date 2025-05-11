@@ -101,6 +101,32 @@ class AdvisorService {
       return "抱歉，我暂时无法回答您的问题。请稍后再试。";
     }
   }
+
+  // 流式回答问题
+  async *answerQuestionStream(question) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    console.log(`收到流式问题: "${question}"`);
+    
+    try {
+      // 为问题生成嵌入向量
+      const queryEmbedding = await this.embeddingService.getEmbedding(question);
+      
+      // 搜索相关文档
+      const searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
+      console.log(`找到${searchResults.length}个相关文档片段`);
+      
+      // 流式生成回答
+      for await (const chunk of this.deepseekService.generateAnswerStream(question, searchResults)) {
+        yield chunk;
+      }
+    } catch (error) {
+      console.error("流式回答问题时出错:", error);
+      yield "抱歉，我暂时无法回答您的问题。请稍后再试。";
+    }
+  }
 }
 
 module.exports = new AdvisorService();

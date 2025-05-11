@@ -17,12 +17,13 @@
           :key="index" 
           :class="['message', message.role === 'user' ? 'user-message' : 'advisor-message']"
         >
-          <div class="message-content" v-html="formatMessage(message.content)"></div>
-        </div>
-        
-        <div v-if="loading" class="message advisor-message">
-          <div class="message-content loading">
-            <div class="dot-typing"></div>
+          <div class="message-content">
+            <!-- 如果当前消息正在加载，显示加载动画 -->
+            <div v-if="message.isLoading" class="loading">
+              <div class="dot-typing"></div>
+            </div>
+            <!-- 否则显示消息内容 -->
+            <div v-else v-html="formatMessage(message.content)"></div>
           </div>
         </div>
       </div>
@@ -52,14 +53,19 @@ export default {
       messages: [],
       userInput: '',
       loading: false,
-      isExpanded: true
+      isExpanded: true,
+      baseURL: ''
     };
   },
-  mounted() {
+  async mounted() {
     this.messages.push({
       role: 'advisor',
-      content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。例如，你可以问我"电子信息工程专业的核心课程有哪些？"或"计算机科学与技术专业需要修多少学分才能毕业？"'
+      content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。例如，你可以问我"电子信息工程专业的核心课程有哪些？"或"计算机科学与技术专业需要修多少学分才能毕业？"',
+      isLoading: false
     });
+    
+    // 在组件挂载时获取 axios 的基础 URL
+    this.baseURL = axios.defaults.baseURL || '';
   },
   methods: {
     formatMessage(content) {
@@ -78,12 +84,13 @@ export default {
     toggleExpand() {
       this.isExpanded = !this.isExpanded;
     },
-    async sendMessage() {
+    sendMessage() {
       if (!this.userInput.trim() || this.loading) return;
       
       this.messages.push({
         role: 'user',
-        content: this.userInput.trim()
+        content: this.userInput.trim(),
+        isLoading: false
       });
       
       const question = this.userInput.trim();
@@ -94,24 +101,139 @@ export default {
         this.scrollToBottom();
       });
       
-      try {
-        const response = await axios.post('advisor/ask', { question });
-        this.messages.push({
-          role: 'advisor',
-          content: response.answer || response.data?.answer || response || "收到响应但格式不正确"
+      // 尝试使用流式接口
+      this.tryStreamingRequest(question)
+        .catch(() => {
+          // 如果流式接口失败，使用原来的非流式接口
+          console.log('流式接口失败，使用常规接口');
+          return this.useRegularRequest(question);
+        })
+        .catch((error) => {
+          console.error('所有接口都失败了:', error);
+          this.messages.push({
+            role: 'advisor',
+            content: '抱歉，我暂时无法回答您的问题。请稍后再试。',
+            isLoading: false
+          });
+        })
+        .finally(() => {
+          this.loading = false;
+          this.$nextTick(() => {
+            this.scrollToBottom();
+          });
         });
-      } catch (error) {
-        console.error('获取回答失败:', error);
-        this.messages.push({
-          role: 'advisor',
-          content: '抱歉，我暂时无法回答您的问题。请稍后再试。'
-        });
-      } finally {
-        this.loading = false;
-        this.$nextTick(() => {
-          this.scrollToBottom();
-        });
+    },
+    async tryStreamingRequest(question) {
+      const streamUrl = '/advisor/ask-stream';
+
+      // 添加一个新的 AI 消息用于显示流式内容，初始状态为加载中
+      const advisorMessageIndex = this.messages.push({
+        role: 'advisor',
+        content: '',
+        isLoading: true  // 初始状态为加载中
+      }) - 1;
+      
+      // 滚动到新消息
+      this.$nextTick(() => {
+        this.scrollToBottom();
+      });
+
+      const response = await fetch(`${this.baseURL}${streamUrl}`,{
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('流式接口响应异常');
       }
+      
+      // 处理 SSE 流
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            break;
+          }
+          
+          // 将新数据添加到缓冲区
+          buffer += decoder.decode(value, { stream: true });
+          
+          // 处理缓冲区中的完整行
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // 保留最后一个可能不完整的行
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                switch (data.type) {
+                  case 'start':
+                    // 开始流式传输
+                    break;
+                    
+                  case 'first_chunk':
+                  case 'chunk':
+                    // 第一次收到内容时，将加载状态设为false
+                    if (this.messages[advisorMessageIndex].isLoading) {
+                      this.messages[advisorMessageIndex].isLoading = false;
+                    }
+                    // 更新消息内容
+                    this.messages[advisorMessageIndex].content += data.content;
+                    this.$nextTick(() => {
+                      this.scrollToBottom();
+                    });
+                    break;
+                    
+                  case 'end':
+                    // 流式传输结束
+                    this.messages[advisorMessageIndex].isLoading = false;  // 确保加载状态结束
+                    return; // 成功完成
+                    
+                  case 'error':
+                    // 处理错误
+                    this.messages[advisorMessageIndex].isLoading = false;
+                    if (data.fallbackAnswer) {
+                      this.messages[advisorMessageIndex].content = data.fallbackAnswer;
+                    }
+                    return; // 结束处理
+                }
+              } catch (parseError) {
+                console.error('解析SSE数据失败:', parseError);
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    async useRegularRequest(question) {
+      // 添加一个新的 AI 消息用于显示内容，初始状态为加载中
+      const advisorMessageIndex = this.messages.push({
+        role: 'advisor',
+        content: '',
+        isLoading: true
+      }) - 1;
+      
+      // 滚动到新消息
+      this.$nextTick(() => {
+        this.scrollToBottom();
+      });
+      
+      const response = await axios.post('advisor/ask', { question });
+      
+      // 收到响应后，更新消息内容并设置加载状态为false
+      this.messages[advisorMessageIndex].isLoading = false;
+      this.messages[advisorMessageIndex].content = response.answer || response.data?.answer || response || "收到响应但格式不正确";
     },
     scrollToBottom() {
       if (this.$refs.chatBody) {
@@ -207,21 +329,21 @@ export default {
 }
 
 /* 加粗文本样式 */
-.message-content ::v-deep strong {
+.message-content :deep(strong) {
   color: #2c3e50;
   font-weight: 600;
   padding: 0 2px;
 }
 
 /* 列表项样式 */
-.message-content ::v-deep .list-item {
+.message-content :deep(.list-item) {
   margin: 8px 0;
   padding-left: 20px;
   position: relative;
   line-height: 1.6;
 }
 
-.message-content ::v-deep .list-item::before {
+.message-content :deep(.list-item::before) {
   content: "•";
   color: #4285f4;
   position: absolute;
@@ -231,11 +353,11 @@ export default {
 }
 
 /* 调整用户消息中的样式 */
-.user-message .message-content ::v-deep strong {
+.user-message .message-content :deep(strong) {
   color: #e3f2fd;
 }
 
-.user-message .message-content ::v-deep .list-item::before {
+.user-message .message-content :deep(.list-item::before) {
   color: #bbdefb;
 }
 

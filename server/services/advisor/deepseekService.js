@@ -48,7 +48,44 @@ class DeepSeekService {
       console.error("DeepSeek API调用失败:", error.message);
       return "抱歉，AI服务暂时不可用，请稍后再试。如有紧急问题，请联系教务处。";
     }
-  }
+  };
+
+  // 流式生成回答
+  async *generateAnswerStream(question, relevantDocs) {
+    try {
+      // 提取相关文档的内容
+      const context = relevantDocs
+        .map(doc => doc.document.content || doc.document)
+        .join("\n\n---\n\n");
+      
+      console.log(`向DeepSeek发送流式请求，问题长度: ${question.length}, 上下文长度: ${context.length}`);
+      
+      const stream = await this.client.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: this.systemPrompt },
+          { role: "user", content: `基于以下参考文档回答问题:\n\n${context}\n\n学生问题: ${question}` }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+        stream: true,
+      });
+      
+      console.log("DeepSeek开始流式响应");
+      
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          yield content;
+        }
+      }
+      
+      console.log("DeepSeek流式响应结束");
+    } catch (error) {
+      console.error("DeepSeek API调用失败:", error.message);
+      yield "抱歉，AI服务暂时不可用，请稍后再试。如有紧急问题，请联系教务处。";
+    }
+  };
 }
 
 module.exports = DeepSeekService;
