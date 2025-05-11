@@ -90,14 +90,15 @@
           </el-main>
         </el-container>
       </el-container>
+
+      <!-- 添加AI辅导员组件 -->
+      <AdvisorChat />
     </template>
 
     <template v-else>
       <router-view />
     </template>
-
-    <!-- 添加AI辅导员组件 -->
-    <AdvisorChat />
+    
   </div>
 </template>
 
@@ -112,6 +113,7 @@ import {
   Collection,
   User,
   Setting,
+  Promotion,
   ArrowDown,
 } from '@element-plus/icons-vue'
 import AdvisorChat from '@/components/AdvisorChat.vue'
@@ -127,6 +129,7 @@ export default {
     Setting,
     ArrowDown,
     AdvisorChat,
+    Promotion,
   },
   setup() {
     const route = useRoute()

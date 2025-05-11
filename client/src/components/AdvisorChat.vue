@@ -138,11 +138,23 @@ export default {
         this.scrollToBottom();
       });
 
-      const response = await fetch(`${this.baseURL}${streamUrl}`,{
+      // 获取认证token
+      const token = localStorage.getItem('token');
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // 使用 axios 配置的 baseURL
+      const fullUrl = `${this.baseURL}${streamUrl}`;
+
+      const response = await fetch(fullUrl,{
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
         body: JSON.stringify({ question }),
       });
       
