@@ -69,6 +69,11 @@
                 @click="toggleSidebar"
                 link
               />
+              <!-- 当在AI辅导员页面时显示当前对话标题 -->
+              <div v-if="isAdvisorPage" class="advisor-chat-title">
+                <el-icon><ChatDotRound /></el-icon>
+                <span>{{ advisorCurrentChatTitle || 'AI辅导员' }}</span>
+              </div>
             </div>
 
             <div class="header-right">
@@ -109,7 +114,7 @@
 </template>
 
 <script>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from './store/userStore'
 import {
@@ -146,6 +151,7 @@ export default {
     const userStore = useUserStore()
 
     const isCollapse = ref(false)
+    const advisorCurrentChatTitle = ref('新对话') // 存储AI辅导员当前对话标题
 
     // 获取当前路由路径
     const activeMenu = computed(() => {
@@ -155,7 +161,6 @@ export default {
     const isAdvisorPage = computed(() => {
       return route.path === '/advisor';
     });
-
 
     // 判断是否是登录页
     const isLoginPage = computed(() => {
@@ -185,6 +190,14 @@ export default {
 
     // 在组件挂载时初始化用户状态
     userStore.initializeStore()
+    
+    // 提供更新AI辅导员对话标题的方法
+    const updateAdvisorChatTitle = (title) => {
+      advisorCurrentChatTitle.value = title || '新对话'
+    }
+    
+    // 将方法提供给子组件
+    provide('updateAdvisorChatTitle', updateAdvisorChatTitle)
 
     return {
       isCollapse,
@@ -198,6 +211,8 @@ export default {
       toggleSidebar,
       handleCommand,
       isAdvisorPage,
+      advisorCurrentChatTitle,
+      updateAdvisorChatTitle
     }
   },
 }
@@ -268,6 +283,20 @@ body {
 .header-left {
   display: flex;
   align-items: center;
+}
+
+/* AI辅导员对话标题样式 */
+.advisor-chat-title {
+  display: flex;
+  align-items: center;
+  margin-left: 15px;
+  font-weight: 500;
+  color: #5E35B1;
+}
+
+.advisor-chat-title .el-icon {
+  margin-right: 8px;
+  font-size: 18px;
 }
 
 .header-right {

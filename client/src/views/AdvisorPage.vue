@@ -7,6 +7,10 @@
         <button class="new-chat-button" @click="createNewChat">
           <i class="fas fa-plus"></i> 新建对话
         </button>
+        <!-- Add close sidebar button inside sidebar -->
+        <button class="close-sidebar-button" @click="toggleSidebar">
+          <i class="fas fa-times"></i>
+        </button>
       </div>
       
       <!-- 历史记录区域 -->
@@ -19,7 +23,6 @@
                :class="{ active: !currentChatId }"
                @click="createNewChat">
             <div class="history-item-title">新建对话</div>
-            <!-- <div class="history-item-date">创建新的会话</div> -->
           </div>
           
           <div v-if="chatHistory.length === 0 && hasLoadedHistory" class="empty-history">
@@ -54,48 +57,6 @@
               </div>
             </div>
           </div>
-
-          <!-- 添加美观的确认对话框 -->
-          <div class="modal-overlay" v-if="showModal" @click.self="cancelModal">
-            <div class="modal-container">
-              <div class="modal-header">
-                <h3>{{ modalTitle }}</h3>
-                <button class="modal-close" @click="cancelModal">
-                  <i class="fas fa-times"></i>
-                </button>
-              </div>
-              
-              <div class="modal-body">
-                <!-- 重命名表单 -->
-                <div v-if="modalType === 'rename'">
-                  <input 
-                    type="text" 
-                    v-model="newTitle" 
-                    class="rename-input" 
-                    placeholder="输入新标题" 
-                    ref="renameInput"
-                    @keyup.enter="confirmModal"
-                  >
-                </div>
-                
-                <!-- 删除确认 -->
-                <div v-if="modalType === 'delete'">
-                  <p>确定要删除"{{ selectedChat?.title || '未命名对话' }}"吗？</p>
-                  <p class="warning-text">此操作不可恢复！</p>
-                </div>
-              </div>
-              
-              <div class="modal-footer">
-                <button class="cancel-button" @click="cancelModal">取消</button>
-                <button 
-                  :class="['confirm-button', modalType === 'delete' ? 'delete-button' : '']" 
-                  @click="confirmModal"
-                >
-                  {{ modalType === 'rename' ? '确认' : '删除' }}
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
       
@@ -108,7 +69,6 @@
           </button>
         </div>
         <div class="knowledge-list">
-          <!-- 这里会动态加载知识库列表 -->
           <div class="knowledge-item">
             <i class="fas fa-graduation-cap"></i> 学校课程信息
           </div>
@@ -128,29 +88,10 @@
 
     <!-- 聊天主区域 -->
     <div class="chat-container">
-      <!-- 顶部导航条 -->
-      <div class="chat-header">
-        <button class="menu-toggle" @click="toggleSidebar">
-          <i class="fas fa-bars"></i>
-        </button>
-        <!-- 导航栏重命名按钮 -->
-        <div class="current-chat-info">
-          <span>{{ currentChatTitle }}</span>
-          <button class="rename-button" title="重命名" v-if="currentChatId" 
-            @click="showRenameConfirm(chatHistory.find(chat => chat.id === currentChatId))">
-            <i class="fas fa-edit"></i>
-          </button>
-        </div>
-        <!-- 导航栏删除按钮 -->
-        <div class="header-actions">
-          <button class="clear-chat-button" title="删除对话" 
-            @click="currentChatId && chatHistory.length ? 
-              showDeleteConfirm(chatHistory.find(chat => chat.id === currentChatId)) : 
-              createNewChat()">
-            <i class="fas fa-trash-alt"></i>
-          </button>
-        </div>
-      </div>
+      <!-- 图标按钮替代头部 -->
+      <button class="menu-toggle" @click="toggleSidebar">
+        <i class="fas fa-bars"></i>
+      </button>
 
       <!-- 消息区域 -->
       <div class="messages-area" ref="messagesArea">
@@ -243,12 +184,49 @@
         </div>
       </div>
     </div>
+
+    <!-- 新的删除/重命名确认对话框 (Claude风格) -->
+    <div class="claude-modal-overlay" v-if="showModal" @click.self="cancelModal">
+      <div class="claude-modal-container">
+        <h3 class="claude-modal-title">{{ modalType === 'delete' ? '删除对话？' : '重命名对话' }}</h3>
+        
+        <div class="claude-modal-content">
+          <!-- 重命名表单 -->
+          <div v-if="modalType === 'rename'">
+            <input 
+              type="text" 
+              v-model="newTitle" 
+              class="claude-rename-input" 
+              placeholder="输入新标题" 
+              ref="renameInput"
+              @keyup.enter="confirmModal"
+            >
+          </div>
+          
+          <!-- 删除确认 -->
+          <p v-if="modalType === 'delete'">
+            确定要删除此对话吗？
+          </p>
+        </div>
+        
+        <div class="claude-modal-actions">
+          <button class="claude-cancel-button" @click="cancelModal">取消</button>
+          <button 
+            :class="['claude-confirm-button', modalType === 'delete' ? 'claude-delete-button' : '']" 
+            @click="confirmModal"
+          >
+            {{ modalType === 'rename' ? '确认' : '删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import axios from '@/api/axiosForAssistant';
 import advisorApi from '@/services/advisor'; 
+import { inject, watch } from 'vue'
 
 export default {
   name: 'AdvisorPage',
@@ -261,18 +239,18 @@ export default {
       showScrollButton: false,
       lastScrollPosition: 0,
       scrollThreshold: 100, // 滚动阈值
-      sidebarVisible: true, // 控制侧边栏显示状态
+      sidebarVisible: false, // 默认隐藏侧边栏
       currentChatId: null, // 当前会话ID
       chatHistory: [], // 对话历史
       hasLoadedHistory: false, // 是否已加载历史会话
       knowledgeBases: [], // 知识库列表
       activeKnowledgeBaseId: null, // 当前使用的知识库ID
-      activeMenu: null,       // 当前激活的菜单ID
-      showModal: false,       // 是否显示模态框
-      modalType: '',          // 模态框类型: 'rename' 或 'delete'
-      modalTitle: '',         // 模态框标题
-      selectedChat: null,     // 当前选中的对话
-      newTitle: '',           // 重命名输入
+      activeMenu: null, // 当前激活的菜单ID
+      showModal: false, // 是否显示模态框
+      modalType: '', // 模态框类型: 'rename' 或 'delete'
+      modalTitle: '', // 模态框标题
+      selectedChat: null, // 当前选中的对话
+      newTitle: '', // 重命名输入
     };
   },
   computed: {
@@ -285,6 +263,24 @@ export default {
       const currentChat = this.chatHistory.find(chat => chat.id === this.currentChatId);
       return currentChat ? (currentChat.title || '未命名对话') : '当前对话';
     }
+  },
+  setup() {
+    const updateAdvisorChatTitle = inject('updateAdvisorChatTitle')
+    
+    return {
+      updateAdvisorChatTitle
+    }
+  },
+  watch: {
+      currentChatTitle: {
+      handler(newTitle) {
+        this.updateAdvisorChatTitle(newTitle)
+      },
+      immediate: true
+    }
+  },
+  beforeUnmount() {
+    this.updateAdvisorChatTitle('')
   },
   async mounted() {
     // 添加初始欢迎消息
@@ -308,9 +304,8 @@ export default {
     // 加载对话历史
     await this.loadChatHistory();
     
-    // 检查屏幕尺寸，在移动设备上默认隐藏侧边栏
-    this.checkScreenSize();
-    window.addEventListener('resize', this.checkScreenSize);
+    // 不再根据屏幕尺寸自动显示侧边栏
+    window.addEventListener('resize', this.handleResize);
   },
   beforeUnmount() {
     // 移除滚动监听器
@@ -319,7 +314,7 @@ export default {
     }
     
     // 移除窗口大小监听器
-    window.removeEventListener('resize', this.checkScreenSize);
+    window.removeEventListener('resize', this.handleResize);
   },
   methods: {
     // 格式化消息内容
@@ -377,6 +372,11 @@ export default {
       
       this.showScrollButton = !isNearBottom;
       this.lastScrollPosition = scrollTop;
+    },
+    
+    // 监听窗口大小变化
+    handleResize() {
+      // 不再自动改变侧边栏可见性
     },
     
     // 滚动到底部
@@ -669,15 +669,8 @@ export default {
       this.sidebarVisible = !this.sidebarVisible;
     },
     
-    // 检查屏幕尺寸
-    checkScreenSize() {
-      // 在移动设备上默认隐藏侧边栏
-      if (window.innerWidth < 768) {
-        this.sidebarVisible = false;
-      } else {
-        this.sidebarVisible = true;
-      }
-    },
+    // 不再检查屏幕尺寸自动调整侧边栏
+    // 移除checkScreenSize方法，由toggleSidebar方法完全控制侧边栏显示
     
     // 创建新对话
     createNewChat() {
@@ -929,6 +922,7 @@ export default {
 <style scoped>
 .advisor-page {
   display: flex;
+  justify-content: center; /* 新增: 水平居中 */
   height: 100%;
   width: 100%;
   background-color: #f9f9f9;
@@ -946,26 +940,42 @@ export default {
   height: 100%;
   transition: transform 0.3s ease;
   z-index: 10;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  transform: translateX(-100%);
 }
 
-/* 响应式设计：当侧边栏隐藏时的样式 */
-@media (max-width: 768px) {
-  .sidebar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    transform: translateX(-100%);
-  }
-  
-  .sidebar.visible {
-    transform: translateX(0);
-  }
+.sidebar.visible {
+  transform: translateX(0);
 }
 
 .sidebar-header {
   padding: 1.5rem 1rem;
   border-bottom: 1px solid #e0e0e0;
+  position: relative;
+}
+
+.close-sidebar-button {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  background: none;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #666;
+}
+
+.close-sidebar-button:hover {
+  background-color: #e0e0e0;
+  color: #333;
 }
 
 .app-title {
@@ -1022,7 +1032,7 @@ export default {
   gap: 0.5rem;
 }
 
-/* 修改后的历史项目和操作菜单样式 */
+/* 历史项目和操作菜单样式 */
 .history-item {
   padding: 0.75rem;
   border-radius: 8px;
@@ -1057,11 +1067,11 @@ export default {
   text-overflow: ellipsis;
 }
 
-/* .history-item-date {
+.history-item-date {
   font-size: 0.8rem;
   color: #666;
   margin-top: 0.25rem;
-} */
+}
 
 .history-item-actions {
   position: relative;
@@ -1176,7 +1186,7 @@ export default {
   background-color: #e0e0e0;
 }
 
-/* 聊天容器样式 */
+/* 聊天容器样式 - 新增最大宽度限制 */
 .chat-container {
   flex: 1;
   display: flex;
@@ -1184,81 +1194,44 @@ export default {
   overflow: hidden;
   background-color: white;
   position: relative;
+  margin-left: 0;
+  max-width: 900px; /* 新增: 限制最大宽度 */
+  width: 100%; /* 新增: 确保占据可用空间但不超过max-width */
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05); /* 新增: 轻微阴影效果 */
 }
 
-.chat-header {
-  padding: 1rem;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  align-items: center;
-  background-color: white;
-  z-index: 5;
-}
-
+/* 菜单切换按钮 - 现在浮动在左上角 */
 .menu-toggle {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 5;
   background: none;
   border: none;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.2rem;
   color: #555;
   cursor: pointer;
-  margin-right: 1rem;
+  background-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .menu-toggle:hover {
   color: #333;
-}
-
-.current-chat-info {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-}
-
-.rename-button {
-  background: none;
-  border: none;
-  color: #666;
-  cursor: pointer;
-  padding: 0;
-  font-size: 0.9rem;
-}
-
-.rename-button:hover {
-  color: #333;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.clear-chat-button {
-  background: none;
-  border: none;
-  color: #666;
-  cursor: pointer;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.clear-chat-button:hover {
-  color: #ff3333;
+  background-color: white;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
 }
 
 .messages-area {
   flex: 1;
   overflow-y: auto;
   padding: 1rem;
+  padding-top: 64px; /* Add extra padding at top for the menu button */
   scroll-behavior: smooth;
   position: relative;
 }
@@ -1298,6 +1271,7 @@ export default {
   border-radius: 1.2rem;
   max-width: 80%;
   position: relative;
+  word-wrap: break-word; /* 新增: 确保长文本正确换行 */
 }
 
 .advisor-message {
@@ -1327,46 +1301,7 @@ export default {
   font-size: 0.95rem;
 }
 
-/* 加粗文本样式 */
-.message-content :deep(strong) {
-  font-weight: 600;
-}
-
-/* 斜体文本样式 */
-.message-content :deep(em) {
-  font-style: italic;
-}
-
-/* 链接样式 */
-.message-content :deep(a) {
-  color: #5E35B1;
-  text-decoration: underline;
-}
-
-.user-message .message-content :deep(a) {
-  color: #fff;
-}
-
-/* 列表项样式 */
-.message-content :deep(.list-item) {
-  margin: 8px 0;
-  padding-left: 24px;
-  position: relative;
-  line-height: 1.6;
-}
-
-.message-content :deep(.list-item.bullet::before) {
-  content: "•";
-  position: absolute;
-  left: 8px;
-  font-weight: bold;
-}
-
-/* 调整用户消息中的样式 */
-.user-message .message-content :deep(strong) {
-  color: #e3f2fd;
-}
-
+/* 输入区域样式 */
 .input-area {
   padding: 1rem;
   border-top: 1px solid #eee;
@@ -1422,6 +1357,88 @@ textarea {
   font-size: 0.75rem;
   color: #666;
   text-align: center;
+}
+
+/* Claude 风格模态框 */
+.claude-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.claude-modal-container {
+  width: 100%;
+  max-width: 420px;
+  background-color: white;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 20px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.claude-modal-title {
+  font-size: 1.1rem;
+  margin: 0 0 16px 0;
+  font-weight: 600;
+  color: #333;
+}
+
+.claude-modal-content {
+  margin-bottom: 20px;
+}
+
+.claude-modal-content p {
+  margin: 0;
+  color: #555;
+}
+
+.claude-rename-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.claude-rename-input:focus {
+  border-color: #5E35B1;
+  outline: none;
+}
+
+.claude-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.claude-cancel-button, 
+.claude-confirm-button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: none;
+}
+
+.claude-cancel-button {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+.claude-confirm-button {
+  background-color: #5E35B1;
+  color: white;
+}
+
+.claude-delete-button {
+  background-color: #9c0d20;
 }
 
 /* 加载动画 */
@@ -1684,5 +1701,12 @@ textarea {
 
 .delete-button:hover {
   background-color: #e53935;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .chat-container {
+    max-width: 100%; /* 在小屏幕上占据全部宽度 */
+  }
 }
 </style>
