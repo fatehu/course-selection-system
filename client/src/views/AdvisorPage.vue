@@ -19,20 +19,82 @@
                :class="{ active: !currentChatId }"
                @click="createNewChat">
             <div class="history-item-title">新建对话</div>
-            <div class="history-item-date">创建新的会话</div>
+            <!-- <div class="history-item-date">创建新的会话</div> -->
           </div>
           
           <div v-if="chatHistory.length === 0 && hasLoadedHistory" class="empty-history">
             <p>暂无历史对话</p>
           </div>
           
+          <!-- 在历史对话列表中 -->
           <div v-for="chat in chatHistory" 
-               :key="chat.id" 
-               class="history-item"
-               :class="{ active: currentChatId === chat.id }"
-               @click="switchChat(chat.id)">
-            <div class="history-item-title">{{ chat.title || '未命名对话' }}</div>
-            <div class="history-item-date">{{ formatDate(chat.updatedAt) }}</div>
+              :key="chat.id" 
+              class="history-item"
+              :class="{ active: currentChatId === chat.id }">
+            
+            <div class="history-item-content" @click="switchChat(chat.id)">
+              <div class="history-item-title">{{ chat.title || '未命名对话' }}</div>
+              <div class="history-item-date">{{ formatDate(chat.updatedAt) }}</div>
+            </div>
+            
+            <!-- 三点菜单按钮 -->
+            <div class="history-item-actions">
+              <div class="more-actions" @click.stop="showActionMenu(chat, $event)">
+                <i class="fas fa-ellipsis-v"></i>
+              </div>
+              
+              <!-- 下拉菜单 -->
+              <div v-if="activeMenu === chat.id" class="action-menu">
+                <div class="action-item" @click.stop="showRenameConfirm(chat)">
+                  <i class="fas fa-edit"></i> 重命名
+                </div>
+                <div class="action-item delete-action" @click.stop="showDeleteConfirm(chat)">
+                  <i class="fas fa-trash-alt"></i> 删除
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 添加美观的确认对话框 -->
+          <div class="modal-overlay" v-if="showModal" @click.self="cancelModal">
+            <div class="modal-container">
+              <div class="modal-header">
+                <h3>{{ modalTitle }}</h3>
+                <button class="modal-close" @click="cancelModal">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+              
+              <div class="modal-body">
+                <!-- 重命名表单 -->
+                <div v-if="modalType === 'rename'">
+                  <input 
+                    type="text" 
+                    v-model="newTitle" 
+                    class="rename-input" 
+                    placeholder="输入新标题" 
+                    ref="renameInput"
+                    @keyup.enter="confirmModal"
+                  >
+                </div>
+                
+                <!-- 删除确认 -->
+                <div v-if="modalType === 'delete'">
+                  <p>确定要删除"{{ selectedChat?.title || '未命名对话' }}"吗？</p>
+                  <p class="warning-text">此操作不可恢复！</p>
+                </div>
+              </div>
+              
+              <div class="modal-footer">
+                <button class="cancel-button" @click="cancelModal">取消</button>
+                <button 
+                  :class="['confirm-button', modalType === 'delete' ? 'delete-button' : '']" 
+                  @click="confirmModal"
+                >
+                  {{ modalType === 'rename' ? '确认' : '删除' }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -71,14 +133,20 @@
         <button class="menu-toggle" @click="toggleSidebar">
           <i class="fas fa-bars"></i>
         </button>
+        <!-- 导航栏重命名按钮 -->
         <div class="current-chat-info">
           <span>{{ currentChatTitle }}</span>
-          <button class="rename-button" title="重命名" v-if="currentChatId">
+          <button class="rename-button" title="重命名" v-if="currentChatId" 
+            @click="showRenameConfirm(chatHistory.find(chat => chat.id === currentChatId))">
             <i class="fas fa-edit"></i>
           </button>
         </div>
+        <!-- 导航栏删除按钮 -->
         <div class="header-actions">
-          <button class="clear-chat-button" title="清空对话" @click="clearCurrentChat">
+          <button class="clear-chat-button" title="删除对话" 
+            @click="currentChatId && chatHistory.length ? 
+              showDeleteConfirm(chatHistory.find(chat => chat.id === currentChatId)) : 
+              createNewChat()">
             <i class="fas fa-trash-alt"></i>
           </button>
         </div>
@@ -180,6 +248,7 @@
 
 <script>
 import axios from '@/api/axiosForAssistant';
+import advisorApi from '@/services/advisor'; 
 
 export default {
   name: 'AdvisorPage',
@@ -197,7 +266,13 @@ export default {
       chatHistory: [], // 对话历史
       hasLoadedHistory: false, // 是否已加载历史会话
       knowledgeBases: [], // 知识库列表
-      activeKnowledgeBaseId: null // 当前使用的知识库ID
+      activeKnowledgeBaseId: null, // 当前使用的知识库ID
+      activeMenu: null,       // 当前激活的菜单ID
+      showModal: false,       // 是否显示模态框
+      modalType: '',          // 模态框类型: 'rename' 或 'delete'
+      modalTitle: '',         // 模态框标题
+      selectedChat: null,     // 当前选中的对话
+      newTitle: '',           // 重命名输入
     };
   },
   computed: {
@@ -231,7 +306,7 @@ export default {
     this.adjustTextareaHeight();
     
     // 加载对话历史
-    this.loadChatHistory();
+    await this.loadChatHistory();
     
     // 检查屏幕尺寸，在移动设备上默认隐藏侧边栏
     this.checkScreenSize();
@@ -333,9 +408,9 @@ export default {
       
       // 尝试使用流式接口，传递当前会话ID
       this.tryStreamingRequest(question, this.currentChatId)
-        .catch(() => {
+        .catch((error) => {
           // 如果流式接口失败，使用原来的非流式接口
-          console.log('流式接口失败，使用常规接口');
+          console.log('流式接口失败，使用常规接口', error);
           return this.useRegularRequest(question, this.currentChatId);
         })
         .catch((error) => {
@@ -383,6 +458,7 @@ export default {
 
       // 使用 axios 配置的 baseURL
       const fullUrl = `${this.baseURL}${streamUrl}`;
+      console.log('发送流式请求:', fullUrl, { question, sessionId });
 
       const response = await fetch(fullUrl, {
         method: 'POST',
@@ -395,14 +471,14 @@ export default {
       });
       
       if (!response.ok) {
-        throw new Error('流式接口响应异常');
+        throw new Error('流式接口响应异常: ' + response.status);
       }
       
       // 处理 SSE 流
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      
+
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -425,7 +501,7 @@ export default {
                 
                 switch (data.type) {
                   case 'start':
-                    // 开始流式传输
+                    console.log('开始流式传输');
                     break;
                     
                   case 'first_chunk':
@@ -447,19 +523,30 @@ export default {
                     break;
                     
                   case 'end':
+                    console.log('流式传输结束');
                     // 保存会话ID
-                    if (data.sessionId && !this.currentChatId) {
-                      this.currentChatId = data.sessionId;
+                    if (data.sessionId) {
+                      // 如果尚未设置会话ID则设置
+                      if (!this.currentChatId) {
+                        this.currentChatId = data.sessionId;
+                      }
                       console.log('获取会话ID:', this.currentChatId);
                       // 刷新会话历史
                       this.loadChatHistory();
+
+                      // 判断是否需要生成标题（第一条用户消息）
+                      const userMessages = this.messages.filter(m => m.role === 'user').length;
+                      if (userMessages === 1) {
+                        this.generateTitle(this.currentChatId);
+                      }
                     }
                     
                     // 流式传输结束
-                    this.messages[advisorMessageIndex].isLoading = false;  // 确保加载状态结束
-                    return; // 成功完成
+                    this.messages[advisorMessageIndex].isLoading = false;
+                    return; // 结束处理
                     
                   case 'error':
+                    console.error('流式传输错误:', data.error);
                     // 处理错误
                     this.messages[advisorMessageIndex].isLoading = false;
                     if (data.fallbackAnswer) {
@@ -468,7 +555,7 @@ export default {
                     return; // 结束处理
                 }
               } catch (parseError) {
-                console.error('解析SSE数据失败:', parseError);
+                console.error('解析SSE数据失败:', parseError, line);
               }
             }
           }
@@ -477,7 +564,64 @@ export default {
         reader.releaseLock();
       }
     },
+
+    // 自动生成标题
+    async generateTitle(sessionId) {
+      try {
+        console.log('尝试为会话生成标题:', sessionId);
+        const response = await advisorApi.generateConversationTitle(sessionId);
+        console.log('标题生成响应:', response.data);
+        
+        if (response.data && response.data.success) {
+          console.log('标题生成成功:', response.data.title);
+          // 更新当前显示的标题
+          const currentChat = this.chatHistory.find(chat => chat.id === sessionId);
+          if (currentChat) {
+            currentChat.title = response.data.title;
+          }
+          // 刷新会话列表
+          this.loadChatHistory();
+        }
+      } catch (error) {
+        console.error('生成标题失败:', error);
+      }
+    },
+
+    // 显示重命名对话框
+    showRenameDialog() {
+      if (!this.currentChatId) return;
+      
+      const currentChat = this.chatHistory.find(chat => chat.id === this.currentChatId);
+      if (currentChat) {
+        const title = prompt('请输入新的会话标题:', currentChat.title || '');
+        if (title !== null && title.trim() !== '') {
+          this.renameConversation(this.currentChatId, title.trim());
+        }
+      }
+    },
     
+    // 重命名会话
+    async renameConversation(sessionId, newTitle) {
+      try {
+        console.log('重命名会话:', sessionId, '新标题:', newTitle);
+        const response = await advisorApi.renameConversation(sessionId, newTitle);
+        console.log('重命名响应:', response.data);
+        
+        if (response.data && response.data.success) {
+          console.log('重命名成功');
+          // 更新当前显示的标题
+          const currentChat = this.chatHistory.find(chat => chat.id === sessionId);
+          if (currentChat) {
+            currentChat.title = newTitle;
+          }
+          // 刷新会话列表
+          this.loadChatHistory();
+        }
+      } catch (error) {
+        console.error('重命名失败:', error);
+      }
+    },
+
     // 常规请求方法
     async useRegularRequest(question, sessionId) {
       // 添加一个新的 AI 消息用于显示内容，初始状态为加载中
@@ -492,11 +636,14 @@ export default {
         this.scrollToBottom();
       });
       
-      const response = await axios.post('advisor/ask', { 
+      console.log('发送常规请求:', { question, sessionId });
+      const response = await axios.post('/advisor/ask', { 
         question,
         sessionId,
         knowledgeBaseId: this.activeKnowledgeBaseId
       });
+      
+      console.log('收到常规响应:', response.data);
       
       // 保存会话ID
       if (response.data && response.data.sessionId) {
@@ -505,6 +652,11 @@ export default {
         
         // 如果成功回答，刷新会话历史
         this.loadChatHistory();
+        
+        // 如果是第一条消息，生成标题
+        if (this.messages.length <= 3) {
+          this.generateTitle(this.currentChatId);
+        }
       }
       
       // 收到响应后，更新消息内容并设置加载状态为false
@@ -540,29 +692,48 @@ export default {
     },
     
     // 清空当前会话
-    clearCurrentChat() {
-      if (confirm('确定要清空当前对话吗？此操作不可恢复。')) {
-        this.messages = [{
-          role: 'advisor',
-          content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。有什么我可以帮助你的吗？',
-          isLoading: false
-        }];
-        
-        // 如果是现有会话，可以调用API删除
-        if (this.currentChatId) {
-          // 这里可以添加删除会话的API调用
-          // ...
+    async clearCurrentChat() {
+      if (!confirm('确定要删除当前对话吗？此操作不可恢复。')) {
+        return;
+      }
+      
+      if (this.currentChatId) {
+        try {
+          console.log('删除会话:', this.currentChatId);
+          const response = await advisorApi.deleteConversation(this.currentChatId);
+          console.log('删除响应:', response.data);
+          
+          if (response.data && response.data.success) {
+            console.log('会话删除成功');
+            this.createNewChat();
+            this.loadChatHistory();
+          } else {
+            console.error('删除失败:', response.data?.error || '未知错误');
+            // 如果API调用失败，只清空本地消息
+            this.createNewChat();
+          }
+        } catch (error) {
+          console.error('删除会话失败:', error);
+          // 发生错误时仍然清空本地消息
+          this.createNewChat();
         }
+      } else {
+        // 如果没有当前会话ID，只需重置本地状态
+        this.createNewChat();
       }
     },
     
     // 加载会话历史
     async loadChatHistory() {
       try {
-        const response = await axios.get('advisor/conversations');
+        console.log('加载会话历史...');
+        const response = await advisorApi.getUserConversations();
+        console.log('会话历史响应:', response.data);
+        
         if (response.data && response.data.success) {
           this.chatHistory = response.data.conversations || [];
           this.hasLoadedHistory = true;
+          console.log('历史加载完成,共', this.chatHistory.length, '个会话');
         }
       } catch (error) {
         console.error('加载会话历史失败:', error);
@@ -572,8 +743,10 @@ export default {
     // 加载特定会话
     async loadConversation(sessionId) {
       try {
+        console.log('加载会话:', sessionId);
         this.loading = true;
-        const response = await axios.get(`advisor/conversations/${sessionId}`);
+        const response = await advisorApi.getConversationMessages(sessionId);
+        console.log('会话加载响应:', response.data);
         
         if (response.data && response.data.success) {
           const conversation = response.data.conversation;
@@ -639,7 +812,115 @@ export default {
     setActiveKnowledgeBase(knowledgeBaseId) {
       this.activeKnowledgeBaseId = knowledgeBaseId;
       // 可以在这里添加切换知识库的提示
-      // ...
+      console.log('切换到知识库:', knowledgeBaseId);
+    },
+
+  // 显示操作菜单
+  showActionMenu(chat, event) {
+    // 阻止事件冒泡
+    if (event) event.stopPropagation();
+    
+    // 如果当前有打开的菜单且点击的是同一个项目，则关闭
+    if (this.activeMenu === chat.id) {
+      this.activeMenu = null;
+    } else {
+      this.activeMenu = chat.id;
+    }
+    
+    // 点击其他区域关闭菜单
+    const closeMenu = (e) => {
+      this.activeMenu = null;
+      document.removeEventListener('click', closeMenu);
+    };
+    
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+    }, 0);
+  },
+  
+    // 显示重命名确认框
+    showRenameConfirm(chat) {
+      if (!chat) return;
+      this.selectedChat = chat;
+      this.modalType = 'rename';
+      this.modalTitle = '重命名对话';
+      this.newTitle = chat.title || '';
+      this.showModal = true;
+      
+      // 聚焦输入框
+      this.$nextTick(() => {
+        if (this.$refs.renameInput) {
+          this.$refs.renameInput.focus();
+        }
+      });
+    },
+    
+    // 显示删除确认框
+    showDeleteConfirm(chat) {
+      if (!chat) return;
+      this.selectedChat = chat;
+      this.modalType = 'delete';
+      this.modalTitle = '删除对话';
+      this.showModal = true;
+    },
+    
+    // 取消模态框
+    cancelModal() {
+      this.showModal = false;
+      this.selectedChat = null;
+      this.newTitle = '';
+    },
+    
+    // 确认模态框操作
+    confirmModal() {
+      if (!this.selectedChat) return;
+      
+      if (this.modalType === 'rename') {
+        // 处理重命名
+        if (this.newTitle.trim()) {
+          this.renameConversation(this.selectedChat.id, this.newTitle.trim());
+        }
+      } else if (this.modalType === 'delete') {
+        // 处理删除
+        this.deleteConversation(this.selectedChat.id);
+      }
+      
+      this.showModal = false;
+      this.selectedChat = null;
+      this.newTitle = '';
+    },
+    
+    // 删除会话 - 保留原有完善处理
+    async deleteConversation(chatId) {
+      try {
+        console.log('删除会话:', chatId);
+        const response = await advisorApi.deleteConversation(chatId);
+        console.log('删除响应:', response.data);
+        
+        if (response.data && response.data.success) {
+          console.log('会话删除成功');
+          
+          // 如果删除的是当前会话，创建新会话
+          if (this.currentChatId === chatId) {
+            this.createNewChat();
+          }
+          
+          // 刷新会话列表
+          this.loadChatHistory();
+        } else {
+          console.error('删除失败:', response.data?.error || '未知错误');
+          // 如果API调用失败但返回了响应，仍然处理本地状态
+          if (this.currentChatId === chatId) {
+            this.createNewChat();
+          }
+        }
+      } catch (error) {
+        console.error('删除会话失败:', error);
+        // 发生错误时仍然清空本地消息
+        if (this.currentChatId === chatId) {
+          this.createNewChat();
+        }
+      }
     }
   }
 };
@@ -741,7 +1022,8 @@ export default {
   gap: 0.5rem;
 }
 
-.history-item, .knowledge-item {
+/* 修改后的历史项目和操作菜单样式 */
+.history-item {
   padding: 0.75rem;
   border-radius: 8px;
   background-color: white;
@@ -750,16 +1032,22 @@ export default {
   font-size: 0.9rem;
   color: #333;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.history-item:hover, .knowledge-item:hover {
+.history-item:hover {
   background-color: #e8e8e8;
 }
 
 .history-item.active {
   background-color: #e3f2fd;
   border-left: 3px solid #2196F3;
+}
+
+.history-item-content {
+  flex: 1;
+  overflow: hidden;
 }
 
 .history-item-title {
@@ -769,10 +1057,59 @@ export default {
   text-overflow: ellipsis;
 }
 
-.history-item-date {
+/* .history-item-date {
   font-size: 0.8rem;
   color: #666;
   margin-top: 0.25rem;
+} */
+
+.history-item-actions {
+  position: relative;
+}
+
+.more-actions {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #666;
+  opacity: 0.7;
+  transition: all 0.2s;
+}
+
+.more-actions:hover {
+  background-color: #f0f0f0;
+  opacity: 1;
+}
+
+.action-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 120px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.action-item {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s;
+}
+
+.action-item:hover {
+  background-color: #f5f5f5;
+}
+
+.delete-action {
+  color: #f44336;
 }
 
 .empty-history {
@@ -786,6 +1123,15 @@ export default {
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background-color: white;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.knowledge-item:hover {
+  background-color: #e8e8e8;
 }
 
 .knowledge-item i {
@@ -909,7 +1255,6 @@ export default {
   color: #ff3333;
 }
 
-/* 保留原有的消息区域、输入区域等样式 */
 .messages-area {
   flex: 1;
   overflow-y: auto;
@@ -1203,5 +1548,141 @@ textarea {
 .scroll-button:hover {
   background-color: #4527A0;
   transform: translateY(-2px);
+}
+
+/* 新增模态框样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-container {
+  width: 100%;
+  max-width: 400px;
+  background-color: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+  animation: modal-in 0.2s ease-out;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #333;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: #666;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.rename-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.rename-input:focus {
+  border-color: #5E35B1;
+  outline: none;
+}
+
+.warning-text {
+  color: #f44336;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+.modal-footer {
+  padding: 12px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #eee;
+}
+
+.cancel-button, .confirm-button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cancel-button {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.cancel-button:hover {
+  background-color: #e0e0e0;
+}
+
+.confirm-button {
+  background-color: #5E35B1;
+  color: white;
+}
+
+.confirm-button:hover {
+  background-color: #4527A0;
+}
+
+.delete-button {
+  background-color: #f44336;
+}
+
+.delete-button:hover {
+  background-color: #e53935;
 }
 </style>

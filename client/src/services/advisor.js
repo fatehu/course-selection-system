@@ -1,32 +1,47 @@
-import axios from 'axios';
+// 为AI辅导员创建特殊的axios实例
+import axios from '@/api/axiosForAssistant';  // 使用专门配置的axios实例
+
+const API_PATH = '/advisor';  // 正确的路径前缀
 
 export default {
   /**
    * 向AI辅导员提问 - 非流式版本
    * @param {string} question - 用户问题
    * @param {string} sessionId - 会话ID（可选）
+   * @param {string} knowledgeBaseId - 知识库ID（可选）
    * @returns {Promise} - 返回AI回答
    */
-  askQuestion(question, sessionId = null) {
-    // 确保与后端路由匹配：app.use('/api/advisor', advisorRoutes)
-    return axios.post('/api/advisor/ask', { question, sessionId });
+  askQuestion(question, sessionId = null, knowledgeBaseId = null) {
+    return axios.post(`${API_PATH}/ask`, { 
+      question, 
+      sessionId,
+      knowledgeBaseId 
+    });
   },
   
   /**
    * 向AI辅导员提问 - 流式版本
+   * 注意：此方法返回fetch的原始Response对象，需自行处理流
    * @param {string} question - 用户问题
    * @param {string} sessionId - 会话ID（可选）
+   * @param {string} knowledgeBaseId - 知识库ID（可选）
    * @returns {Promise} - 返回流式响应
    */
-  askQuestionStream(question, sessionId = null) {
-    // 流式接口的完整路径
-    return fetch('/api/advisor/ask-stream', {
+  askQuestionStream(question, sessionId = null, knowledgeBaseId = null) {
+    // 获取baseURL，已经包含了 /api
+    const baseURL = axios.defaults.baseURL || '';
+    
+    return fetch(`${baseURL}${API_PATH}/ask-stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
-      body: JSON.stringify({ question, sessionId })
+      body: JSON.stringify({ 
+        question, 
+        sessionId,
+        knowledgeBaseId 
+      })
     });
   },
   
@@ -35,7 +50,8 @@ export default {
    * @returns {Promise} - 返回会话列表
    */
   getUserConversations() {
-    return axios.get('/api/advisor/conversations');
+    console.log('获取会话历史，API路径:', `${API_PATH}/conversations`);
+    return axios.get(`${API_PATH}/conversations`);
   },
   
   /**
@@ -44,6 +60,34 @@ export default {
    * @returns {Promise} - 返回会话消息
    */
   getConversationMessages(sessionId) {
-    return axios.get(`/api/advisor/conversations/${sessionId}`);
+    return axios.get(`${API_PATH}/conversations/${sessionId}`);
+  },
+
+  /**
+   * 重命名会话
+   * @param {string} sessionId - 会话ID
+   * @param {string} newTitle - 新标题
+   * @returns {Promise} - 返回操作结果
+   */
+  renameConversation(sessionId, newTitle) {
+    return axios.put(`${API_PATH}/conversations/${sessionId}/rename`, { title: newTitle });
+  },
+
+  /**
+   * 删除会话
+   * @param {string} sessionId - 会话ID
+   * @returns {Promise} - 返回操作结果
+   */
+  deleteConversation(sessionId) {
+    return axios.delete(`${API_PATH}/conversations/${sessionId}`);
+  },
+
+  /**
+   * 生成会话标题
+   * @param {string} sessionId - 会话ID
+   * @returns {Promise} - 返回生成的标题
+   */
+  generateConversationTitle(sessionId) {
+    return axios.post(`${API_PATH}/conversations/${sessionId}/generate-title`);
   }
 };

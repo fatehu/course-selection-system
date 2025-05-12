@@ -1,4 +1,5 @@
 const advisorService = require('../services/advisor');
+const conversationService = require('../services/advisor/conversationService');
 
 // 处理超时的Promise包装器
 function withTimeout(promise, timeoutMs = 30000) {
@@ -22,7 +23,7 @@ function withTimeout(promise, timeoutMs = 30000) {
 const askQuestion = async (req, res) => {
   try {
     const { question, sessionId } = req.body;
-    const userId = req.user.id; // 从认证中间件获取
+    const userId = req.user.id;
     
     if (!question || typeof question !== 'string') {
       return res.status(400).json({ 
@@ -68,7 +69,7 @@ const askQuestion = async (req, res) => {
 const askQuestionStream = async (req, res) => {
   try {
     const { question, sessionId } = req.body;
-    const userId = req.user.id; // 从认证中间件获取
+    const userId = req.user.id;
     
     if (!question || typeof question !== 'string') {
       return res.status(400).json({ 
@@ -148,7 +149,7 @@ const askQuestionStream = async (req, res) => {
 const getUserConversations = async (req, res) => {
   try {
     const userId = req.user.id;
-    const conversations = advisorService.getUserConversations(userId);
+    const conversations = await advisorService.getUserConversations(userId);
     
     res.json({
       success: true,
@@ -169,22 +170,133 @@ const getConversationMessages = async (req, res) => {
     const { sessionId } = req.params;
     const userId = req.user.id;
     
-    const conversation = advisorService.getConversation(sessionId);
+    const conversation = await advisorService.getConversation(sessionId);
     
     // 验证会话存在且属于当前用户
-    if (!conversation || conversation.userId !== userId) {
+    if (!conversation || conversation.user_id !== userId) {
       return res.status(404).json({
         success: false,
         error: "会话不存在或无权访问"
       });
     }
     
+    const messages = await advisorService.getConversationMessages(sessionId);
+    
     res.json({
       success: true,
-      conversation
+      conversation: {
+        ...conversation,
+        messages
+      }
     });
   } catch (error) {
     console.error("获取会话消息出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+// 重命名会话
+const renameConversation = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { title } = req.body;
+    const userId = req.user.id;
+    
+    // 验证会话是否属于当前用户
+    const conversation = await advisorService.getConversation(sessionId);
+    if (!conversation || conversation.user_id !== userId) {
+      return res.status(404).json({
+        success: false,
+        error: "会话不存在或无权访问"
+      });
+    }
+    
+    const success = await conversationService.updateConversationTitle(sessionId, title);
+    
+    res.json({
+      success,
+      message: success ? "会话重命名成功" : "会话重命名失败"
+    });
+  } catch (error) {
+    console.error("重命名会话出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+// 删除会话
+const deleteConversation = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.id;
+    
+    // 验证会话是否属于当前用户
+    const conversation = await advisorService.getConversation(sessionId);
+    if (!conversation || conversation.user_id !== userId) {
+      return res.status(404).json({
+        success: false,
+        error: "会话不存在或无权访问"
+      });
+    }
+    
+    const success = await conversationService.deleteConversation(sessionId);
+    
+    res.json({
+      success,
+      message: success ? "会话删除成功" : "会话删除失败"
+    });
+  } catch (error) {
+    console.error("删除会话出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+const generateTitle = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.id;
+    
+    // 验证会话存在且属于当前用户
+    const conversation = await advisorService.getConversation(sessionId);
+    if (!conversation || conversation.user_id !== userId) {
+      return res.status(404).json({
+        success: false,
+        error: "会话不存在或无权访问"
+      });
+    }
+    
+    // 获取该会话的第一条用户消息
+    const messages = await advisorService.getConversationMessages(sessionId);
+    const firstUserMessage = messages.find(msg => msg.role === 'user');
+    
+    if (!firstUserMessage) {
+      return res.status(400).json({
+        success: false,
+        error: "会话中没有用户消息"
+      });
+    }
+    
+    // 使用AI生成标题
+    const title = await advisorService.generateTitle(firstUserMessage.content);
+    
+    // 更新会话标题
+    const success = await conversationService.updateConversationTitle(sessionId, title);
+    
+    res.json({
+      success,
+      title,
+      message: success ? "标题生成成功" : "标题生成失败"
+    });
+  } catch (error) {
+    console.error("生成标题出错:", error);
     res.status(500).json({
       success: false,
       error: error.message || "服务器内部错误"
@@ -196,5 +308,8 @@ module.exports = {
   askQuestion,
   askQuestionStream,
   getUserConversations,
-  getConversationMessages
+  getConversationMessages,
+  renameConversation,
+  deleteConversation,
+  generateTitle
 };

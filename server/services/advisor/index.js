@@ -87,20 +87,19 @@ class AdvisorService {
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
-      sessionId = conversationService.createConversation(userId);
+      sessionId = await conversationService.createConversation(userId);
       console.log(`创建新会话: ${sessionId}`);
     }
     
     try {
       // 添加用户问题到会话
-      conversationService.addMessage(sessionId, {
+      await conversationService.addMessage(sessionId, {
         role: 'user',
-        content: question,
-        timestamp: Date.now()
+        content: question
       });
       
       // 获取对话历史
-      const conversationHistory = conversationService.getRecentMessages(sessionId);
+      const conversationHistory = await conversationService.getRecentMessages(sessionId);
       
       // 为问题生成嵌入向量
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
@@ -117,10 +116,9 @@ class AdvisorService {
       );
       
       // 添加AI回答到会话
-      conversationService.addMessage(sessionId, {
+      await conversationService.addMessage(sessionId, {
         role: 'assistant',
-        content: answer,
-        timestamp: Date.now()
+        content: answer
       });
       
       return { sessionId, answer };
@@ -143,20 +141,19 @@ class AdvisorService {
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
-      sessionId = conversationService.createConversation(userId);
+      sessionId = await conversationService.createConversation(userId);
       console.log(`创建新会话: ${sessionId}`);
     }
     
     try {
       // 添加用户问题到会话
-      conversationService.addMessage(sessionId, {
+      await conversationService.addMessage(sessionId, {
         role: 'user',
-        content: question,
-        timestamp: Date.now()
+        content: question
       });
       
       // 获取对话历史
-      const conversationHistory = conversationService.getRecentMessages(sessionId);
+      const conversationHistory = await conversationService.getRecentMessages(sessionId);
       
       // 为问题生成嵌入向量
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
@@ -179,36 +176,76 @@ class AdvisorService {
       }
       
       // 添加完整AI回答到会话
-      conversationService.addMessage(sessionId, {
+      await conversationService.addMessage(sessionId, {
         role: 'assistant',
-        content: fullAnswer,
-        timestamp: Date.now()
+        content: fullAnswer
       });
     } catch (error) {
       console.error("流式回答问题时出错:", error);
       const errorMessage = "抱歉，我暂时无法回答您的问题。请稍后再试。";
       
       // 添加错误信息到会话
-      conversationService.addMessage(sessionId, {
+      await conversationService.addMessage(sessionId, {
         role: 'assistant',
-        content: errorMessage,
-        timestamp: Date.now()
+        content: errorMessage
       });
       
       yield { sessionId, chunk: errorMessage };
     }
   }
-
+  
+  // 获取会话信息
+  async getConversation(sessionId) {
+    return await conversationService.getConversation(sessionId);
+  }
+  
   // 获取用户会话列表
-  getUserConversations(userId) {
-    return conversationService.getUserConversations(userId);
+  async getUserConversations(userId) {
+    return await conversationService.getUserConversations(userId);
+  }
+  
+  // 获取会话消息
+  async getConversationMessages(sessionId) {
+    return await conversationService.getConversationMessages(sessionId);
   }
 
-  // 获取指定会话
-  getConversation(sessionId) {
-    return conversationService.getConversation(sessionId);
+  // 生成会话标题
+  async generateTitle(questionText) {
+  if (!this.initialized) {
+    await this.initialize();
+  }
+  
+  try {
+    // 调用DeepSeek服务生成标题
+    const prompt = `请为以下问题生成一个简短的标题(10个字以内)，不要使用引号，仅返回标题本身：\n"${questionText}"`;
+    
+    const response = await this.deepseekService.client.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: "你是一个简洁标题生成器，只输出标题文本，不加任何其他内容。" },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 20
+    });
+    
+    let title = response.choices[0].message.content.trim();
+    
+    // 确保标题不超过30个字符
+    if (title.length > 30) {
+      title = title.substring(0, 27) + '...';
+    }
+    
+    return title;
+  } catch (error) {
+    console.error("生成标题失败:", error);
+    // 如果生成失败，使用问题的前20个字符作为标题
+    return questionText.length > 20 ? 
+           questionText.substring(0, 17) + '...' : 
+           questionText;
   }
 }
+}
 
-// 导出方法
+
 module.exports = new AdvisorService();

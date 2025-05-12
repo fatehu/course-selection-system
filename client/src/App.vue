@@ -67,7 +67,7 @@
               <el-button
                 :icon="isCollapse ? 'el-icon-s-unfold' : 'el-icon-s-fold'"
                 @click="toggleSidebar"
-                type="text"
+                link
               />
             </div>
 
