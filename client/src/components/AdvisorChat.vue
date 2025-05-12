@@ -130,9 +130,12 @@ export default {
 
     // 打开全屏页面
     const openFullPage = () => {
-      window.location.href = '/advisor';
+      if (currentChatId.value) {
+        window.location.href = `/advisor?sessionId=${currentChatId.value}`;
+      } else {
+        window.location.href = '/advisor';
+      }
     };
-
     // 格式化消息内容 (简易Markdown支持)
     const formatMessage = (content) => {
       if (!content) return '';

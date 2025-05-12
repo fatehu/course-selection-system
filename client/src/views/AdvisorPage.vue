@@ -303,7 +303,16 @@ export default {
     
     // 加载对话历史
     await this.loadChatHistory();
+
+    // 检查URL中是否有sessionId参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('sessionId');
     
+    if (sessionId) {
+      // 加载指定会话
+      this.loadConversation(sessionId);
+    }
+      
     // 不再根据屏幕尺寸自动显示侧边栏
     window.addEventListener('resize', this.handleResize);
   },
