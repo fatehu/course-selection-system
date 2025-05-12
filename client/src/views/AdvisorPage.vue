@@ -1,10 +1,10 @@
 <template>
   <div class="advisor-page">
-    <!-- 新增侧边栏 -->
-    <div class="sidebar">
+    <!-- 侧边栏 -->
+    <div class="sidebar" :class="{ 'visible': sidebarVisible }">
       <div class="sidebar-header">
         <h1 class="app-title">AI学习辅导员</h1>
-        <button class="new-chat-button">
+        <button class="new-chat-button" @click="createNewChat">
           <i class="fas fa-plus"></i> 新建对话
         </button>
       </div>
@@ -15,11 +15,25 @@
           <i class="fas fa-history"></i> 对话历史
         </div>
         <div class="history-list">
-          <div class="history-item active">
-            <div class="history-item-title">当前对话</div>
-            <div class="history-item-date">今天</div>
+          <div class="history-item" 
+               :class="{ active: !currentChatId }"
+               @click="createNewChat">
+            <div class="history-item-title">新建对话</div>
+            <div class="history-item-date">创建新的会话</div>
           </div>
-          <!-- 这里会动态加载历史记录 -->
+          
+          <div v-if="chatHistory.length === 0 && hasLoadedHistory" class="empty-history">
+            <p>暂无历史对话</p>
+          </div>
+          
+          <div v-for="chat in chatHistory" 
+               :key="chat.id" 
+               class="history-item"
+               :class="{ active: currentChatId === chat.id }"
+               @click="switchChat(chat.id)">
+            <div class="history-item-title">{{ chat.title || '未命名对话' }}</div>
+            <div class="history-item-date">{{ formatDate(chat.updatedAt) }}</div>
+          </div>
         </div>
       </div>
       
@@ -58,13 +72,13 @@
           <i class="fas fa-bars"></i>
         </button>
         <div class="current-chat-info">
-          <span>当前对话</span>
-          <button class="rename-button" title="重命名">
+          <span>{{ currentChatTitle }}</span>
+          <button class="rename-button" title="重命名" v-if="currentChatId">
             <i class="fas fa-edit"></i>
           </button>
         </div>
         <div class="header-actions">
-          <button class="clear-chat-button" title="清空对话">
+          <button class="clear-chat-button" title="清空对话" @click="clearCurrentChat">
             <i class="fas fa-trash-alt"></i>
           </button>
         </div>
@@ -72,7 +86,7 @@
 
       <!-- 消息区域 -->
       <div class="messages-area" ref="messagesArea">
-        <div class="welcome-container" v-if="messages.length <= 1">
+        <div class="welcome-container" v-if="messages.length <= 1 && !currentChatId">
           <div class="welcome-content">
             <div class="welcome-icon">
               <i class="fas fa-robot"></i>
@@ -179,10 +193,23 @@ export default {
       lastScrollPosition: 0,
       scrollThreshold: 100, // 滚动阈值
       sidebarVisible: true, // 控制侧边栏显示状态
-      currentChatId: null, // 当前对话ID
+      currentChatId: null, // 当前会话ID
       chatHistory: [], // 对话历史
-      knowledgeBases: [] // 知识库列表
+      hasLoadedHistory: false, // 是否已加载历史会话
+      knowledgeBases: [], // 知识库列表
+      activeKnowledgeBaseId: null // 当前使用的知识库ID
     };
+  },
+  computed: {
+    // 当前会话标题
+    currentChatTitle() {
+      if (!this.currentChatId) {
+        return '新对话';
+      }
+      
+      const currentChat = this.chatHistory.find(chat => chat.id === this.currentChatId);
+      return currentChat ? (currentChat.title || '未命名对话') : '当前对话';
+    }
   },
   async mounted() {
     // 添加初始欢迎消息
@@ -203,9 +230,8 @@ export default {
     // 调整输入框高度
     this.adjustTextareaHeight();
     
-    // 在这里可以添加加载对话历史和知识库列表的方法
-    // this.loadChatHistory();
-    // this.loadKnowledgeBases();
+    // 加载对话历史
+    this.loadChatHistory();
     
     // 检查屏幕尺寸，在移动设备上默认隐藏侧边栏
     this.checkScreenSize();
@@ -221,7 +247,7 @@ export default {
     window.removeEventListener('resize', this.checkScreenSize);
   },
   methods: {
-    // 原有方法保持不变
+    // 格式化消息内容
     formatMessage(content) {
       // Markdown 基础格式转换
       const formatted = content
@@ -242,6 +268,7 @@ export default {
       return formatted.replace(/<br><div class="list-item">/g, '<div class="list-item">');
     },
     
+    // 调整文本输入框高度
     adjustTextareaHeight() {
       const textarea = this.$refs.inputField;
       if (!textarea) return;
@@ -257,6 +284,7 @@ export default {
       textarea.style.height = `${newHeight}px`;
     },
     
+    // 使用示例问题
     useExampleQuestion(question) {
       this.userInput = question;
       this.$nextTick(() => {
@@ -265,6 +293,7 @@ export default {
       });
     },
     
+    // 处理滚动事件
     handleScroll() {
       if (!this.$refs.messagesArea) return;
       
@@ -275,12 +304,14 @@ export default {
       this.lastScrollPosition = scrollTop;
     },
     
+    // 滚动到底部
     scrollToBottom() {
       if (this.$refs.messagesArea) {
         this.$refs.messagesArea.scrollTop = this.$refs.messagesArea.scrollHeight;
       }
     },
     
+    // 发送消息
     sendMessage() {
       if (!this.userInput.trim() || this.loading) return;
       
@@ -300,12 +331,12 @@ export default {
         this.scrollToBottom();
       });
       
-      // 尝试使用流式接口
-      this.tryStreamingRequest(question)
+      // 尝试使用流式接口，传递当前会话ID
+      this.tryStreamingRequest(question, this.currentChatId)
         .catch(() => {
           // 如果流式接口失败，使用原来的非流式接口
           console.log('流式接口失败，使用常规接口');
-          return this.useRegularRequest(question);
+          return this.useRegularRequest(question, this.currentChatId);
         })
         .catch((error) => {
           console.error('所有接口都失败了:', error);
@@ -323,7 +354,8 @@ export default {
         });
     },
     
-    async tryStreamingRequest(question) {
+    // 流式请求方法
+    async tryStreamingRequest(question, sessionId) {
       const streamUrl = '/advisor/ask-stream';
 
       // 添加一个新的 AI 消息用于显示流式内容，初始状态为加载中
@@ -357,7 +389,7 @@ export default {
         headers: headers,
         body: JSON.stringify({ 
           question,
-          // 可以在此处添加知识库ID参数，用于指定使用哪个知识库
+          sessionId,
           knowledgeBaseId: this.activeKnowledgeBaseId
         }),
       });
@@ -398,6 +430,14 @@ export default {
                     
                   case 'first_chunk':
                   case 'chunk':
+                    // 保存会话ID
+                    if (data.sessionId && !this.currentChatId) {
+                      this.currentChatId = data.sessionId;
+                      console.log('获取会话ID:', this.currentChatId);
+                      // 刷新会话历史
+                      this.loadChatHistory();
+                    }
+                    
                     // 第一次收到内容时，将加载状态设为false
                     if (this.messages[advisorMessageIndex].isLoading) {
                       this.messages[advisorMessageIndex].isLoading = false;
@@ -407,10 +447,16 @@ export default {
                     break;
                     
                   case 'end':
+                    // 保存会话ID
+                    if (data.sessionId && !this.currentChatId) {
+                      this.currentChatId = data.sessionId;
+                      console.log('获取会话ID:', this.currentChatId);
+                      // 刷新会话历史
+                      this.loadChatHistory();
+                    }
+                    
                     // 流式传输结束
                     this.messages[advisorMessageIndex].isLoading = false;  // 确保加载状态结束
-                    // 保存对话内容到历史记录
-                    this.saveConversation();
                     return; // 成功完成
                     
                   case 'error':
@@ -432,7 +478,8 @@ export default {
       }
     },
     
-    async useRegularRequest(question) {
+    // 常规请求方法
+    async useRegularRequest(question, sessionId) {
       // 添加一个新的 AI 消息用于显示内容，初始状态为加载中
       const advisorMessageIndex = this.messages.push({
         role: 'advisor',
@@ -447,23 +494,30 @@ export default {
       
       const response = await axios.post('advisor/ask', { 
         question,
-        // 可以在此处添加知识库ID参数
+        sessionId,
         knowledgeBaseId: this.activeKnowledgeBaseId
       });
       
+      // 保存会话ID
+      if (response.data && response.data.sessionId) {
+        this.currentChatId = response.data.sessionId;
+        console.log('获取会话ID:', this.currentChatId);
+        
+        // 如果成功回答，刷新会话历史
+        this.loadChatHistory();
+      }
+      
       // 收到响应后，更新消息内容并设置加载状态为false
       this.messages[advisorMessageIndex].isLoading = false;
-      this.messages[advisorMessageIndex].content = response.answer || response.data?.answer || response || "收到响应但格式不正确";
-      
-      // 保存对话内容到历史记录
-      this.saveConversation();
+      this.messages[advisorMessageIndex].content = response.data?.answer || "收到响应但格式不正确";
     },
     
-    // 新增的方法
+    // 切换侧边栏显示状态
     toggleSidebar() {
       this.sidebarVisible = !this.sidebarVisible;
     },
     
+    // 检查屏幕尺寸
     checkScreenSize() {
       // 在移动设备上默认隐藏侧边栏
       if (window.innerWidth < 768) {
@@ -475,60 +529,113 @@ export default {
     
     // 创建新对话
     createNewChat() {
-      // 生成新对话ID
-      this.currentChatId = Date.now().toString();
+      // 清空当前会话ID
+      this.currentChatId = null;
       // 清空当前消息
-      this.messages = [];
-      // 添加初始欢迎消息
-      this.messages.push({
+      this.messages = [{
         role: 'advisor',
         content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。有什么我可以帮助你的吗？',
         isLoading: false
-      });
+      }];
     },
     
-    // 保存当前对话到历史记录
-    saveConversation() {
-      // 实现保存对话逻辑
-      if (!this.currentChatId) {
-        this.currentChatId = Date.now().toString();
+    // 清空当前会话
+    clearCurrentChat() {
+      if (confirm('确定要清空当前对话吗？此操作不可恢复。')) {
+        this.messages = [{
+          role: 'advisor',
+          content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。有什么我可以帮助你的吗？',
+          isLoading: false
+        }];
+        
+        // 如果是现有会话，可以调用API删除
+        if (this.currentChatId) {
+          // 这里可以添加删除会话的API调用
+          // ...
+        }
       }
-      
-      // 这里可以调用API保存对话，或者保存到本地存储
-      // ...
     },
     
-    // 加载历史对话
-    loadChatHistory() {
-      // 实现加载历史对话的逻辑
-      // 这里可以调用API获取历史对话列表
-      // ...
+    // 加载会话历史
+    async loadChatHistory() {
+      try {
+        const response = await axios.get('advisor/conversations');
+        if (response.data && response.data.success) {
+          this.chatHistory = response.data.conversations || [];
+          this.hasLoadedHistory = true;
+        }
+      } catch (error) {
+        console.error('加载会话历史失败:', error);
+      }
+    },
+    
+    // 加载特定会话
+    async loadConversation(sessionId) {
+      try {
+        this.loading = true;
+        const response = await axios.get(`advisor/conversations/${sessionId}`);
+        
+        if (response.data && response.data.success) {
+          const conversation = response.data.conversation;
+          this.currentChatId = sessionId;
+          
+          // 清空当前消息并加载会话消息
+          this.messages = conversation.messages.map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'advisor',
+            content: msg.content,
+            isLoading: false
+          }));
+          
+          // 如果没有消息，添加欢迎消息
+          if (this.messages.length === 0) {
+            this.messages.push({
+              role: 'advisor',
+              content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。有什么我可以帮助你的吗？',
+              isLoading: false
+            });
+          }
+        }
+      } catch (error) {
+        console.error('加载会话失败:', error);
+        // 如果加载失败，显示默认欢迎消息
+        this.messages = [{
+          role: 'advisor',
+          content: '你好！我是你的AI学习辅导员，可以帮你解答关于课程、选课和学分要求的问题。有什么我可以帮助你的吗？',
+          isLoading: false
+        }];
+      } finally {
+        this.loading = false;
+        this.$nextTick(() => {
+          this.scrollToBottom();
+        });
+      }
     },
     
     // 切换到指定的历史对话
     switchChat(chatId) {
-      // 保存当前对话
-      this.saveConversation();
+      if (this.currentChatId === chatId) return;
+      this.loadConversation(chatId);
+    },
+    
+    // 格式化日期
+    formatDate(timestamp) {
+      if (!timestamp) return '';
       
-      // 加载指定ID的对话
-      this.currentChatId = chatId;
-      // 这里可以调用API获取对话内容
-      // ...
+      const date = new Date(timestamp);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      const isYesterday = new Date(now - 86400000).toDateString() === date.toDateString();
+      
+      if (isToday) {
+        return `今天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+      } else if (isYesterday) {
+        return `昨天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+      } else {
+        return `${date.getMonth() + 1}月${date.getDate()}日`;
+      }
     },
     
-    // 创建新知识库
-    createKnowledgeBase() {
-      // 实现创建知识库的逻辑
-      // ...
-    },
-    
-    // 加载知识库列表
-    loadKnowledgeBases() {
-      // 实现加载知识库列表的逻辑
-      // ...
-    },
-    
-    // 切换使用的知识库
+    // 设置使用的知识库
     setActiveKnowledgeBase(knowledgeBaseId) {
       this.activeKnowledgeBaseId = knowledgeBaseId;
       // 可以在这里添加切换知识库的提示
@@ -666,6 +773,13 @@ export default {
   font-size: 0.8rem;
   color: #666;
   margin-top: 0.25rem;
+}
+
+.empty-history {
+  text-align: center;
+  padding: 1rem;
+  color: #666;
+  font-size: 0.9rem;
 }
 
 .knowledge-item {

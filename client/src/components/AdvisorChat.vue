@@ -45,6 +45,7 @@
 
 <script>
 import axios from '@/api/axiosForAssistant';
+import advisorApi from '@/services/advisor';
 
 export default {
   name: 'AdvisorChat',
@@ -54,7 +55,8 @@ export default {
       userInput: '',
       loading: false,
       isExpanded: true,
-      baseURL: ''
+      baseURL: '',
+      sessionId: null // 添加会话ID字段
     };
   },
   async mounted() {
@@ -101,12 +103,12 @@ export default {
         this.scrollToBottom();
       });
       
-      // 尝试使用流式接口
-      this.tryStreamingRequest(question)
+      // 尝试使用流式接口，传递会话ID
+      this.tryStreamingRequest(question, this.sessionId)
         .catch(() => {
           // 如果流式接口失败，使用原来的非流式接口
           console.log('流式接口失败，使用常规接口');
-          return this.useRegularRequest(question);
+          return this.useRegularRequest(question, this.sessionId);
         })
         .catch((error) => {
           console.error('所有接口都失败了:', error);
@@ -123,7 +125,7 @@ export default {
           });
         });
     },
-    async tryStreamingRequest(question) {
+    async tryStreamingRequest(question, sessionId) {
       const streamUrl = '/advisor/ask-stream';
 
       // 添加一个新的 AI 消息用于显示流式内容，初始状态为加载中
@@ -152,10 +154,13 @@ export default {
       // 使用 axios 配置的 baseURL
       const fullUrl = `${this.baseURL}${streamUrl}`;
 
-      const response = await fetch(fullUrl,{
+      const response = await fetch(fullUrl, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ 
+          question,
+          sessionId
+        }),
       });
       
       if (!response.ok) {
@@ -194,6 +199,12 @@ export default {
                     
                   case 'first_chunk':
                   case 'chunk':
+                    // 保存会话ID
+                    if (data.sessionId && !this.sessionId) {
+                      this.sessionId = data.sessionId;
+                      console.log('获取会话ID:', this.sessionId);
+                    }
+                    
                     // 第一次收到内容时，将加载状态设为false
                     if (this.messages[advisorMessageIndex].isLoading) {
                       this.messages[advisorMessageIndex].isLoading = false;
@@ -206,6 +217,12 @@ export default {
                     break;
                     
                   case 'end':
+                    // 保存会话ID
+                    if (data.sessionId && !this.sessionId) {
+                      this.sessionId = data.sessionId;
+                      console.log('获取会话ID:', this.sessionId);
+                    }
+                    
                     // 流式传输结束
                     this.messages[advisorMessageIndex].isLoading = false;  // 确保加载状态结束
                     return; // 成功完成
@@ -228,7 +245,7 @@ export default {
         reader.releaseLock();
       }
     },
-    async useRegularRequest(question) {
+    async useRegularRequest(question, sessionId) {
       // 添加一个新的 AI 消息用于显示内容，初始状态为加载中
       const advisorMessageIndex = this.messages.push({
         role: 'advisor',
@@ -241,7 +258,16 @@ export default {
         this.scrollToBottom();
       });
       
-      const response = await axios.post('advisor/ask', { question });
+      const response = await axios.post('advisor/ask', { 
+        question,
+        sessionId
+      });
+      
+      // 保存会话ID
+      if (response.data && response.data.sessionId) {
+        this.sessionId = response.data.sessionId;
+        console.log('获取会话ID:', this.sessionId);
+      }
       
       // 收到响应后，更新消息内容并设置加载状态为false
       this.messages[advisorMessageIndex].isLoading = false;

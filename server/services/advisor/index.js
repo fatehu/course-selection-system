@@ -4,6 +4,7 @@ const DocumentProcessor = require('./documentProcessor');
 const EmbeddingService = require('./embeddingService');
 const VectorStore = require('./vectorStore');
 const DeepSeekService = require('./deepseekService');
+const conversationService = require('./conversationService');
 require('dotenv').config();
 
 class AdvisorService {
@@ -77,14 +78,30 @@ class AdvisorService {
   }
   
   // 回答问题
-  async answerQuestion(question) {
+  async answerQuestion(question, userId, sessionId = null) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到问题: "${question}"`);
+    console.log(`收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId}`);
+    
+    // 如果没有提供会话ID，创建新会话
+    if (!sessionId) {
+      sessionId = conversationService.createConversation(userId);
+      console.log(`创建新会话: ${sessionId}`);
+    }
     
     try {
+      // 添加用户问题到会话
+      conversationService.addMessage(sessionId, {
+        role: 'user',
+        content: question,
+        timestamp: Date.now()
+      });
+      
+      // 获取对话历史
+      const conversationHistory = conversationService.getRecentMessages(sessionId);
+      
       // 为问题生成嵌入向量
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
       
@@ -92,25 +109,55 @@ class AdvisorService {
       const searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
       console.log(`找到${searchResults.length}个相关文档片段`);
       
-      // 生成回答
-      const answer = await this.deepseekService.generateAnswer(question, searchResults);
+      // 生成回答，传递对话历史
+      const answer = await this.deepseekService.generateAnswer(
+        question, 
+        searchResults,
+        conversationHistory
+      );
       
-      return answer;
+      // 添加AI回答到会话
+      conversationService.addMessage(sessionId, {
+        role: 'assistant',
+        content: answer,
+        timestamp: Date.now()
+      });
+      
+      return { sessionId, answer };
     } catch (error) {
       console.error("回答问题时出错:", error);
-      return "抱歉，我暂时无法回答您的问题。请稍后再试。";
+      return { 
+        sessionId,
+        answer: "抱歉，我暂时无法回答您的问题。请稍后再试。" 
+      };
     }
   }
 
   // 流式回答问题
-  async *answerQuestionStream(question) {
+  async *answerQuestionStream(question, userId, sessionId = null) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到流式问题: "${question}"`);
+    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId}`);
+    
+    // 如果没有提供会话ID，创建新会话
+    if (!sessionId) {
+      sessionId = conversationService.createConversation(userId);
+      console.log(`创建新会话: ${sessionId}`);
+    }
     
     try {
+      // 添加用户问题到会话
+      conversationService.addMessage(sessionId, {
+        role: 'user',
+        content: question,
+        timestamp: Date.now()
+      });
+      
+      // 获取对话历史
+      const conversationHistory = conversationService.getRecentMessages(sessionId);
+      
       // 为问题生成嵌入向量
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
       
@@ -118,15 +165,50 @@ class AdvisorService {
       const searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
       console.log(`找到${searchResults.length}个相关文档片段`);
       
+      // 收集完整回答
+      let fullAnswer = '';
+      
       // 流式生成回答
-      for await (const chunk of this.deepseekService.generateAnswerStream(question, searchResults)) {
-        yield chunk;
+      for await (const chunk of this.deepseekService.generateAnswerStream(
+        question, 
+        searchResults, 
+        conversationHistory
+      )) {
+        fullAnswer += chunk;
+        yield { sessionId, chunk };
       }
+      
+      // 添加完整AI回答到会话
+      conversationService.addMessage(sessionId, {
+        role: 'assistant',
+        content: fullAnswer,
+        timestamp: Date.now()
+      });
     } catch (error) {
       console.error("流式回答问题时出错:", error);
-      yield "抱歉，我暂时无法回答您的问题。请稍后再试。";
+      const errorMessage = "抱歉，我暂时无法回答您的问题。请稍后再试。";
+      
+      // 添加错误信息到会话
+      conversationService.addMessage(sessionId, {
+        role: 'assistant',
+        content: errorMessage,
+        timestamp: Date.now()
+      });
+      
+      yield { sessionId, chunk: errorMessage };
     }
+  }
+
+  // 获取用户会话列表
+  getUserConversations(userId) {
+    return conversationService.getUserConversations(userId);
+  }
+
+  // 获取指定会话
+  getConversation(sessionId) {
+    return conversationService.getConversation(sessionId);
   }
 }
 
+// 导出方法
 module.exports = new AdvisorService();

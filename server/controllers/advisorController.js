@@ -21,7 +21,8 @@ function withTimeout(promise, timeoutMs = 30000) {
 // AI辅导员问答API
 const askQuestion = async (req, res) => {
   try {
-    const { question } = req.body;
+    const { question, sessionId } = req.body;
+    const userId = req.user.id; // 从认证中间件获取
     
     if (!question || typeof question !== 'string') {
       return res.status(400).json({ 
@@ -30,17 +31,18 @@ const askQuestion = async (req, res) => {
       });
     }
     
-    console.log(`${new Date().toISOString()} - 收到问题: "${question}"`);
+    console.log(`${new Date().toISOString()} - 收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'}`);
     
     // 使用超时包装器处理长时间运行的请求
-    const answer = await withTimeout(
-      advisorService.answerQuestion(question),
-      6000000 // 60秒超时
+    const result = await withTimeout(
+      advisorService.answerQuestion(question, userId, sessionId),
+      60000 // 60秒超时
     );
     
     res.json({ 
       success: true, 
-      answer 
+      sessionId: result.sessionId,
+      answer: result.answer 
     });
   } catch (error) {
     console.error("回答问题出错:", error);
@@ -65,7 +67,8 @@ const askQuestion = async (req, res) => {
 // AI辅导员问答API - 流式输出版本
 const askQuestionStream = async (req, res) => {
   try {
-    const { question } = req.body;
+    const { question, sessionId } = req.body;
+    const userId = req.user.id; // 从认证中间件获取
     
     if (!question || typeof question !== 'string') {
       return res.status(400).json({ 
@@ -74,7 +77,7 @@ const askQuestionStream = async (req, res) => {
       });
     }
     
-    console.log(`${new Date().toISOString()} - 收到流式问题: "${question}"`);
+    console.log(`${new Date().toISOString()} - 收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'}`);
     
     // 设置SSE响应头
     res.setHeader('Content-Type', 'text/event-stream');
@@ -88,14 +91,20 @@ const askQuestionStream = async (req, res) => {
     
     try {
       // 调用服务获取流式回答
-      const answerStream = advisorService.answerQuestionStream(question);
+      const answerStream = advisorService.answerQuestionStream(question, userId, sessionId);
       
       let isFirstChunk = true;
-      for await (const chunk of answerStream) {
+      let currentSessionId = null;
+      
+      for await (const result of answerStream) {
+        // 更新会话ID
+        currentSessionId = result.sessionId;
+        
         // 发送每个chunk
         const data = {
           type: isFirstChunk ? 'first_chunk' : 'chunk',
-          content: chunk
+          content: result.chunk,
+          sessionId: currentSessionId
         };
         
         res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -103,7 +112,7 @@ const askQuestionStream = async (req, res) => {
       }
       
       // 发送结束标志
-      res.write('data: {"type": "end"}\n\n');
+      res.write(`data: {"type": "end", "sessionId": "${currentSessionId}"}\n\n`);
       
     } catch (error) {
       console.error("流式回答问题出错:", error);
@@ -135,7 +144,57 @@ const askQuestionStream = async (req, res) => {
   }
 };
 
+// 获取用户的会话列表
+const getUserConversations = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const conversations = advisorService.getUserConversations(userId);
+    
+    res.json({
+      success: true,
+      conversations
+    });
+  } catch (error) {
+    console.error("获取用户会话列表出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+// 获取指定会话的消息
+const getConversationMessages = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user.id;
+    
+    const conversation = advisorService.getConversation(sessionId);
+    
+    // 验证会话存在且属于当前用户
+    if (!conversation || conversation.userId !== userId) {
+      return res.status(404).json({
+        success: false,
+        error: "会话不存在或无权访问"
+      });
+    }
+    
+    res.json({
+      success: true,
+      conversation
+    });
+  } catch (error) {
+    console.error("获取会话消息出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
 module.exports = {
   askQuestion,
-  askQuestionStream
+  askQuestionStream,
+  getUserConversations,
+  getConversationMessages
 };
