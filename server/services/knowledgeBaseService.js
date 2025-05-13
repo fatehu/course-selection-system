@@ -107,13 +107,18 @@ class KnowledgeBaseService {
     // Get file type
     const fileType = fileExtension.substring(1); // Remove dot
     
-    // Save file record to database
+    // 计算文件内容哈希
+    const documentProcessor = new DocumentProcessor();
+    const contentHash = await documentProcessor.generateDocumentId(storedPath);
+    
+    // 保存文件记录到数据库
     return await knowledgeBaseModel.addFile(
       knowledgeBaseId,
       file.originalname,
       `kb_${knowledgeBaseId}/${storedFilename}`,
       fileType,
-      file.size
+      file.size,
+      contentHash //新增文件哈希值
     );
   }
   
@@ -408,33 +413,17 @@ class KnowledgeBaseService {
   // 根据内容ID检查文件是否存在
   async checkFileExistsByContent(knowledgeBaseId, contentId) {
     try {
-      // 获取知识库中的所有文件
-      const files = await knowledgeBaseModel.getKnowledgeBaseFiles(knowledgeBaseId);
+      // 直接通过哈希值查询数据库
+      const sql = `
+        SELECT * FROM knowledge_files 
+        WHERE knowledge_base_id = ? 
+        AND content_hash = ? 
+        AND status != 'deleted'
+      `;
       
-      // 检查是否存在文件内容哈希匹配
-      // 我们需要在数据库模型中添加一个字段来存储内容哈希
-      // 但在此之前，我们可以逐一检查每个文件
-      for (const file of files) {
-        // 跳过已删除的文件
-        if (file.status === 'deleted') continue;
-        
-        // 获取文件的完整路径
-        const filePath = path.join(this.uploadsDir, file.stored_path);
-        
-        // 验证文件是否存在
-        if (!fs.existsSync(filePath)) continue;
-        
-        // 使用DocumentProcessor生成文件内容ID
-        const fileContentId = await this.documentProcessor.generateDocumentId(filePath);
-        
-        // 比较内容ID
-        if (fileContentId === contentId) {
-          return file; // 找到匹配的文件
-        }
-      }
+      const [rows] = await pool.query(sql, [knowledgeBaseId, contentId]);
       
-      // 没有找到匹配的文件
-      return null;
+      return rows.length > 0 ? rows[0] : null;
     } catch (error) {
       console.error(`检查文件是否存在失败: ${error.message}`);
       return null;

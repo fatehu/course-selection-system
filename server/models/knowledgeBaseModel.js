@@ -74,11 +74,11 @@ const deleteKnowledgeBase = async (id) => {
 };
 
 // 添加文件到知识库
-const addFile = async (knowledgeBaseId, originalFilename, storedPath, fileType, fileSize = 0) => {
+const addFile = async (knowledgeBaseId, originalFilename, storedPath, fileType, fileSize = 0, contentHash = null) => {
   const sql = `
     INSERT INTO knowledge_files 
-    (knowledge_base_id, original_filename, stored_path, file_type, file_size, status) 
-    VALUES (?, ?, ?, ?, ?, 'pending')
+    (knowledge_base_id, original_filename, stored_path, file_type, file_size, status, content_hash) 
+    VALUES (?, ?, ?, ?, ?, 'pending', ?)
   `;
   
   try {
@@ -87,7 +87,8 @@ const addFile = async (knowledgeBaseId, originalFilename, storedPath, fileType, 
       originalFilename, 
       storedPath, 
       fileType,
-      fileSize
+      fileSize,
+      contentHash
     ]);
     return result.insertId;
   } catch (error) {
