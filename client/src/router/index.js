@@ -1,5 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '../store/userStore'
+// 添加知识库管理路由
+import KnowledgeBaseManager from '@/components/KnowledgeBaseManager.vue';
+import KnowledgeBaseDetail from '@/components/KnowledgeBaseDetail.vue';
+import KnowledgeBaseTest from '@/components/KnowledgeBaseTest.vue';
 
 const routes = [
   {
@@ -137,6 +141,33 @@ const routes = [
     component: () => import('@/views/AnnouncementDetail.vue'),
     meta: { requiresAuth: true },
   },
+  // 新增AI辅导员路由
+  {
+    path: '/advisor',
+    name: 'Advisor',
+    component: () => import('@/views/AdvisorPage.vue'),
+    meta: { requiresAuth: true },
+  },
+    {
+    path: '/knowledge-base',
+    name: 'KnowledgeBaseManager',
+    component: KnowledgeBaseManager,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/knowledge-base/:id',
+    name: 'KnowledgeBaseDetail',
+    component: KnowledgeBaseDetail,
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/knowledge-base/:id/test',
+    name: 'KnowledgeBaseTest',
+    component: KnowledgeBaseTest,
+    props: true,
+    meta: { requiresAuth: true }
+  },
   {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
@@ -149,7 +180,7 @@ const router = createRouter({
   routes,
 })
 
-// 全局前置守卫 - 修复版本
+// 全局前置守卫
 router.beforeEach((to, from, next) => {
   // 初始化用户存储
   const userStore = useUserStore()

@@ -7,13 +7,14 @@ class Enrollment {
     try {
       const [rows] = await pool.query(`
         SELECT e.*, 
-               u.name as student_name, 
-               c.name as course_name, 
-               c.code as course_code,
-               s.semester, 
-               s.time_slot, 
-               s.location,
-               t.name as teacher_name
+              u.name as student_name, 
+              c.name as course_name, 
+              c.code as course_code,
+              s.semester, 
+              s.time_slot, 
+              s.location,
+              t.name as teacher_name,
+              t.id as teacher_id
         FROM enrollments e
         JOIN users u ON e.student_id = u.id
         JOIN sections s ON e.section_id = s.id

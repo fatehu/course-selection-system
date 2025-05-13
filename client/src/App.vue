@@ -30,7 +30,7 @@
 
             <el-menu-item v-if="isAdmin || isTeacher" index="/sections">
               <el-icon><collection /></el-icon>
-              <span>课程章节</span>
+              <span>课程安排</span>
             </el-menu-item>
 
             <el-menu-item v-if="isAdmin || isTeacher" index="/enrollments">
@@ -48,9 +48,21 @@
               <span>公告发布</span>
             </el-menu-item>
 
+            <!-- 新增知识库管理菜单项 -->
+            <el-menu-item index="/knowledge-base">
+              <el-icon><Collection /></el-icon>
+              <span>知识库管理</span>
+            </el-menu-item>
+
             <el-menu-item index="/profile">
               <el-icon><user /></el-icon>
               <span>个人信息</span>
+            </el-menu-item>
+
+            <!-- 新增AI辅导员菜单项 -->
+            <el-menu-item index="/advisor">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>AI辅导员</span>
             </el-menu-item>
           </el-menu>
         </el-aside>
@@ -61,8 +73,13 @@
               <el-button
                 :icon="isCollapse ? 'el-icon-s-unfold' : 'el-icon-s-fold'"
                 @click="toggleSidebar"
-                type="text"
+                link
               />
+              <!-- 当在AI辅导员页面时显示当前对话标题 -->
+              <div v-if="isAdvisorPage" class="advisor-chat-title">
+                <el-icon><ChatDotRound /></el-icon>
+                <span>{{ advisorCurrentChatTitle || 'AI辅导员' }}</span>
+              </div>
             </div>
 
             <div class="header-right">
@@ -90,19 +107,20 @@
           </el-main>
         </el-container>
       </el-container>
+
+      <!-- 添加AI辅导员组件 -->
+      <AdvisorChat v-if="!isAdvisorPage" />
     </template>
 
     <template v-else>
       <router-view />
     </template>
-
-    <!-- 添加AI辅导员组件 -->
-    <AdvisorChat />
+    
   </div>
 </template>
 
 <script>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from './store/userStore'
 import {
@@ -112,7 +130,10 @@ import {
   Collection,
   User,
   Setting,
+  Promotion,
   ArrowDown,
+  ChatDotRound,
+
 } from '@element-plus/icons-vue'
 import AdvisorChat from '@/components/AdvisorChat.vue'
 
@@ -127,6 +148,8 @@ export default {
     Setting,
     ArrowDown,
     AdvisorChat,
+    Promotion,
+    ChatDotRound,
   },
   setup() {
     const route = useRoute()
@@ -134,11 +157,21 @@ export default {
     const userStore = useUserStore()
 
     const isCollapse = ref(false)
+    const advisorCurrentChatTitle = ref('新对话') // 存储AI辅导员当前对话标题
 
     // 获取当前路由路径
     const activeMenu = computed(() => {
       return route.path
     })
+
+    const isAdvisorPage = computed(() => {
+      return route.path === '/advisor';
+    });
+    
+    // 新增：判断是否是知识库页面
+    const isKnowledgeBasePage = computed(() => {
+      return route.path.startsWith('/knowledge-base');
+    });
 
     // 判断是否是登录页
     const isLoginPage = computed(() => {
@@ -168,6 +201,14 @@ export default {
 
     // 在组件挂载时初始化用户状态
     userStore.initializeStore()
+    
+    // 提供更新AI辅导员对话标题的方法
+    const updateAdvisorChatTitle = (title) => {
+      advisorCurrentChatTitle.value = title || '新对话'
+    }
+    
+    // 将方法提供给子组件
+    provide('updateAdvisorChatTitle', updateAdvisorChatTitle)
 
     return {
       isCollapse,
@@ -180,6 +221,10 @@ export default {
       isStudent,
       toggleSidebar,
       handleCommand,
+      isAdvisorPage,
+      isKnowledgeBasePage,
+      advisorCurrentChatTitle,
+      updateAdvisorChatTitle
     }
   },
 }
@@ -250,6 +295,20 @@ body {
 .header-left {
   display: flex;
   align-items: center;
+}
+
+/* AI辅导员对话标题样式 */
+.advisor-chat-title {
+  display: flex;
+  align-items: center;
+  margin-left: 15px;
+  font-weight: 500;
+  color: #5E35B1;
+}
+
+.advisor-chat-title .el-icon {
+  margin-right: 8px;
+  font-size: 18px;
 }
 
 .header-right {
