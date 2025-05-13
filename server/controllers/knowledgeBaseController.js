@@ -2,6 +2,8 @@ const knowledgeBaseService = require('../services/knowledgeBaseService');
 const multer = require('multer');
 const path = require('path');
 const knowledgeBaseModel = require('../models/knowledgeBaseModel'); 
+const fs = require('fs-extra'); // 使用 fs-extra 而不是原生 fs，因为它有 ensureDirSync 方法
+const DocumentProcessor = require('../services/advisor/documentProcessor');
 
 // 内存存储，用于处理文件上传
 const storage = multer.memoryStorage();
@@ -190,6 +192,41 @@ const uploadFile = async (req, res) => {
       }
       
       const { id } = req.params; // 知识库ID
+      
+      // 检查文件是否已存在
+      // 保存临时文件
+      const tempDir = path.join(process.cwd(), 'temp');
+      fs.ensureDirSync(tempDir);
+      const tempFilePath = path.join(tempDir, req.file.originalname);
+      
+      try {
+        fs.writeFileSync(tempFilePath, req.file.buffer);
+        
+        // 使用DocumentProcessor生成基于内容的ID
+        const documentProcessor = new DocumentProcessor();
+        const contentId = await documentProcessor.generateDocumentId(tempFilePath);
+        
+        // 检查知识库中是否存在相同内容的文件
+        const exists = await knowledgeBaseService.checkFileExistsByContent(id, contentId);
+        
+        // 如果文件已存在，直接拒绝上传
+        if (exists) {
+          return res.status(409).json({
+            success: false,
+            error: "文件重复",
+            message: "文件内容已存在于知识库中，请勿重复上传",
+            fileInfo: exists
+          });
+        }
+      } catch (error) {
+        console.error("检查文件是否存在时出错:", error);
+        // 出错时可以选择继续处理上传，不中断流程
+      } finally {
+        // 删除临时文件
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      }
       
       console.log(`上传文件到知识库 ${id}: ${req.file.originalname}`);
       
@@ -411,6 +448,69 @@ const purgeDeletedFiles = async (req, res) => {
   }
 };
 
+// 检查文件是否已存在于知识库中
+const checkFileExists = async (req, res) => {
+  try {
+    upload(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          error: err.message
+        });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "没有上传文件"
+        });
+      }
+      
+      const { id } = req.params; // 知识库ID
+      
+      // 创建临时目录并保存临时文件
+      const tempDir = path.join(process.cwd(), 'temp');
+      fs.ensureDirSync(tempDir);
+      const tempFilePath = path.join(tempDir, req.file.originalname);
+      
+      try {
+        fs.writeFileSync(tempFilePath, req.file.buffer);
+        
+        // 使用DocumentProcessor生成基于内容的ID
+        const documentProcessor = new DocumentProcessor();
+        const contentId = await documentProcessor.generateDocumentId(tempFilePath);
+        
+        // 检查知识库中是否存在相同内容的文件
+        const exists = await knowledgeBaseService.checkFileExistsByContent(id, contentId);
+        
+        return res.json({
+          success: true,
+          exists: !!exists,
+          message: exists ? "文件内容已存在于知识库中" : "",
+          fileInfo: exists || null
+        });
+      } catch (error) {
+        console.error("处理文件时出错:", error);
+        return res.status(500).json({
+          success: false,
+          error: "处理文件时出错"
+        });
+      } finally {
+        // 确保清理临时文件
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      }
+    });
+  } catch (error) {
+    console.error("检查文件是否存在失败:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
 module.exports = {
   createKnowledgeBase,
   getAllKnowledgeBases,
@@ -424,5 +524,6 @@ module.exports = {
   testSearch,
   cleanupKnowledgeBase,
   restoreFile,
-  purgeDeletedFiles
+  purgeDeletedFiles,
+  checkFileExists
 };

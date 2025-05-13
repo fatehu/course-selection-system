@@ -145,8 +145,9 @@
               <i :class="getFileIcon(getFileType(selectedFile.name))"></i>
               <div class="selected-filename">{{ selectedFile.name }}</div>
               <div class="selected-filesize">{{ formatFileSize(selectedFile.size) }}</div>
-              <button class="small-button" @click.stop="selectedFile = null">
-                <i class="fas fa-times"></i> 移除
+              <button class="file-remove-button" @click.stop="selectedFile = null">
+                <!-- <i class="fas fa-times"></i>  -->
+                <span>移除</span>
               </button>
             </div>
             <div v-else>
@@ -154,6 +155,10 @@
               <p>拖放文件到这里或点击选择文件</p>
               <p class="file-types">支持 PDF, TXT, DOC, DOCX, CSV, MD</p>
             </div>
+          </div>
+
+          <div v-if="uploadStatus" class="upload-status">
+            <i class="fas fa-spinner fa-spin"></i> {{ uploadStatus }}
           </div>
         </div>
         
@@ -225,7 +230,9 @@ export default {
       uploading: false,
       fileToDelete: null,
       fileToRestore: null, // 要恢复的文件
-      fileToPurge: null    // 要彻底删除的文件
+      fileToPurge: null,    // 要彻底删除的文件
+      duplicateFileInfo: null,
+      uploadStatus: ''
     };
   },
   computed: {
@@ -345,40 +352,122 @@ export default {
       return filename.split('.').pop().toLowerCase();
     },
     
-    // 上传文件
-    async uploadFile() {
-      if (!this.selectedFile) return;
+  // 上传文件前检查
+  async checkFileExists() {
+    if (!this.selectedFile) return false;
+    
+    this.uploadStatus = '检查中...';
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', this.selectedFile);
       
-      this.uploading = true;
-      
-      try {
-        const formData = new FormData();
-        formData.append('file', this.selectedFile);
-        
-        const response = await axios.post(`/knowledge-base/${this.id}/files`, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          }
-        });
-        
-        if (response.data.success) {
-          // 上传成功
-          this.showUploadDialog = false;
-          this.selectedFile = null;
-          
-          // 重新获取文件列表
-          this.fetchKnowledgeBaseDetails();
-        } else {
-          console.error('上传文件失败:', response.data.error);
-          alert(`上传失败: ${response.data.error}`);
+      const response = await axios.post(`/knowledge-base/${this.id}/check-file`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
         }
-      } catch (error) {
-        console.error('上传文件出错:', error);
-        alert('上传出错，请稍后再试');
-      } finally {
-        this.uploading = false;
+      });
+      
+      if (response.data.exists) {
+        this.duplicateFileInfo = response.data.fileInfo;
+        return true; // 文件已存在
       }
-    },
+      
+      return false; // 文件不存在，可以上传
+    } catch (error) {
+      console.error('检查文件是否存在时出错:', error);
+      // 如果检查出错，继续上传流程
+      return false;
+    } finally {
+      this.uploadStatus = '';
+    }
+  },
+
+  // 上传文件
+  async uploadFile() {
+    if (!this.selectedFile) return;
+    
+    this.uploading = true;
+    
+    try {
+      // 首先检查文件是否存在
+      const fileExists = await this.checkFileExists();
+      
+      if (fileExists) {
+        // 文件已存在，显示确认对话框
+        this.confirmDialogTitle = '文件已存在';
+        this.confirmDialogMessage = `文件"${this.selectedFile.name}"的内容已存在于知识库中。是否仍要上传？`;
+        this.confirmDialogActionText = '强制上传';
+        this.confirmDialogActionClass = '';
+        this.confirmedAction = this.forceUploadFile;
+        this.showConfirmDialog = true;
+        this.uploading = false;
+        return;
+      }
+      
+      // 文件不存在，直接上传
+      await this.proceedWithUpload();
+    } catch (error) {
+      console.error('上传文件出错:', error);
+      alert('上传出错，请稍后再试');
+      this.uploading = false;
+    }
+  },
+
+  // 上传文件
+  async uploadFile() {
+    if (!this.selectedFile) return;
+    
+    this.uploading = true;
+    this.uploadStatus = '上传中...';
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', this.selectedFile);
+      
+      const response = await axios.post(`/knowledge-base/${this.id}/files`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      if (response.data.success) {
+        // 上传成功
+        this.showUploadDialog = false;
+        this.selectedFile = null;
+        
+        // 重新获取文件列表
+        this.fetchKnowledgeBaseDetails();
+      }
+    } catch (error) {
+      // console.error('上传文件出错:', error);
+      
+      // // 检查是否是文件重复错误
+      // if (error.response && error.response.status === 409) {
+      //   this.$message.error(error.response.data.message || '文件内容已存在，请勿重复上传');
+      // } else {
+      //   this.$message.error('上传失败，请稍后再试');
+      // }
+
+      if (error.response && error.response.status === 409) {
+        this.$notify({
+          title: '文件重复',
+          message: error.response.data.message || '文件内容已存在，请勿重复上传',
+          type: 'warning',
+          duration: 5000
+        });
+      } else {
+        this.$notify.error({
+          title: '上传失败',
+          message: '上传过程中出现错误，请稍后重试',
+          duration: 5000
+        });
+      }
+    } finally {
+      this.uploading = false;
+      this.uploadStatus = '';
+    }
+  },
     
     // 确认删除文件
     confirmDeleteFile(file) {
@@ -1030,20 +1119,39 @@ export default {
   margin-bottom: 10px;
 }
 
-.small-button {
-  background-color: #f0f0f0;
-  color: #333;
-  border: none;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
+.file-remove-button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 6px;
+  background-color: #f5f0ff;
+  color: #5E35B1;
+  border: 1px solid #e0d4f5;
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.small-button:hover {
-  background-color: #e0e0e0;
+.file-remove-button:hover {
+  background-color: #ede3ff;
+  border-color: #5E35B1;
+}
+
+.file-remove-button:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+.upload-status {
+  margin-top: 10px;
+  padding: 8px;
+  background-color: #e3f2fd;
+  color: #2196F3;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>

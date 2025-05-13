@@ -16,11 +16,25 @@ class DocumentProcessor {
   }
   
   // 生成文档哈希ID
-  generateDocumentId(filePath) {
-    const fileName = path.basename(filePath);
-    const stats = fs.statSync(filePath);
-    const hashInput = `${fileName}-${stats.size}-${stats.mtime.toISOString()}`;
-    return crypto.createHash('md5').update(hashInput).digest('hex');
+  // generateDocumentId(filePath) {
+  //   const fileName = path.basename(filePath);
+  //   const stats = fs.statSync(filePath);
+  //   const hashInput = `${fileName}-${stats.size}-${stats.mtime.toISOString()}`;
+  //   return crypto.createHash('md5').update(hashInput).digest('hex');
+  // }
+
+  // 直接基于文件内容生成文档ID
+  async generateDocumentId(filePath) {
+    try {
+      // 读取文件内容
+      const content = await fs.promises.readFile(filePath);
+      // 直接基于内容生成哈希
+      return crypto.createHash('md5').update(content).digest('hex');
+    } catch (error) {
+      console.error(`生成文档ID时出错: ${error.message}`);
+      // 如果读取文件失败，回退到使用文件路径生成ID
+      return crypto.createHash('md5').update(filePath).digest('hex');
+    }
   }
   
   // 根据文件类型提取文本
@@ -180,7 +194,7 @@ class DocumentProcessor {
   
   // 处理文件并返回分块结果
   async processFile(filePath) {
-    const docId = this.generateDocumentId(filePath);
+    const docId = await this.generateDocumentId(filePath);
     const cacheFile = path.join(this.cacheDir, `${docId}.json`);
     
     // 检查缓存
@@ -230,6 +244,56 @@ class DocumentProcessor {
     }
     
     return allChunks;
+  }
+
+  // 清理缓存
+  async cleanupUnusedCache() {
+    try {
+      // 获取所有文档文件路径
+      const knowledgeBasePath = path.join(__dirname, '../data/knowledge_base');
+      const allDocuments = await this.getAllDocumentPaths(knowledgeBasePath);
+      
+      // 生成所有文档的ID
+      const validDocumentIds = await Promise.all(
+        allDocuments.map(docPath => this.generateDocumentId(docPath))
+      );
+      
+      // 获取所有缓存文件
+      const cacheFiles = fs.readdirSync(this.chunkDir)
+        .filter(file => file.endsWith('.json'))
+        .map(file => file.replace('.json', ''));
+      
+      // 删除无效缓存
+      for (const cacheId of cacheFiles) {
+        if (!validDocumentIds.includes(cacheId)) {
+          const cacheFilePath = path.join(this.chunkDir, `${cacheId}.json`);
+          fs.unlinkSync(cacheFilePath);
+          console.log(`删除未使用的缓存: ${cacheFilePath}`);
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`清理缓存时出错: ${error.message}`);
+      return false;
+    }
+  }
+
+  // 获取所有文档路径的辅助方法
+  async getAllDocumentPaths(dir) {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    const files = await Promise.all(entries.map(entry => {
+      const fullPath = path.join(dir, entry.name);
+      return entry.isDirectory() ? 
+        this.getAllDocumentPaths(fullPath) : 
+        fullPath;
+    }));
+    
+    return files.flat()
+      .filter(file => {
+        const ext = path.extname(file).toLowerCase();
+        return ['.pdf', '.txt', '.md', '.docx'].includes(ext);
+      });
   }
 }
 

@@ -33,4 +33,7 @@ router.post('/files/:fileId/restore', knowledgeBaseController.restoreFile);
 // 清理知识库中的已删除文件（彻底删除）
 router.post('/:id/purge', knowledgeBaseController.purgeDeletedFiles);
 
+// 文件检查
+router.post('/:id/check-file', knowledgeBaseController.checkFileExists);
+
 module.exports = router;

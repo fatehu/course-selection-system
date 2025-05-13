@@ -366,75 +366,78 @@ class KnowledgeBaseService {
     try {
       // 获取知识库中已删除的文件
       const deletedFiles = await knowledgeBaseModel.getDeletedFiles(knowledgeBaseId);
-      console.log(`找到${deletedFiles.length}个已删除文件需要清理`);
       
       // 获取向量存储
       const vectorStore = this.getVectorStore(knowledgeBaseId);
       
       // 彻底删除已标记为删除的文档
       const purgedCount = vectorStore.purgeDeletedDocuments();
-      console.log(`从向量存储中删除了${purgedCount}个文档`);
-      vectorStore.save();
       
-      // 删除物理文件、chunk文件和数据库记录
+      // 保存更新后的向量存储
+      if (purgedCount > 0) {
+        vectorStore.save();
+        console.log(`已彻底删除${purgedCount}个文档`);
+      }
+      
+      // 删除物理文件并从数据库中删除记录
       let deletedCount = 0;
       for (const file of deletedFiles) {
         try {
-          // 1. 处理原始文件
+          // 删除物理文件
           const filePath = path.join(this.uploadsDir, file.stored_path);
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
-            console.log(`删除了原始文件: ${filePath}`);
           }
           
-          // 2. 处理chunk文件目录
-          const fileDir = path.dirname(filePath);
-          const fileName = path.basename(filePath);
-          const fileNameWithoutExt = path.basename(filePath, path.extname(filePath));
-          
-          // 查找可能的chunk目录命名模式
-          const possibleChunkDirs = [
-            path.join(fileDir, `${fileNameWithoutExt}_chunks`),
-            path.join(fileDir, `${file.id}_chunks`),
-            path.join(fileDir, `file_${file.id}_chunks`)
-          ];
-          
-          // 检查并删除chunk目录
-          for (const chunkDir of possibleChunkDirs) {
-            if (fs.existsSync(chunkDir) && fs.statSync(chunkDir).isDirectory()) {
-              console.log(`找到chunk目录: ${chunkDir}`);
-              
-              // 删除目录中的所有文件
-              const chunkFiles = fs.readdirSync(chunkDir);
-              console.log(`该目录包含${chunkFiles.length}个chunk文件`);
-              
-              for (const chunkFile of chunkFiles) {
-                fs.unlinkSync(path.join(chunkDir, chunkFile));
-              }
-              
-              // 删除空目录
-              fs.rmdirSync(chunkDir);
-              console.log(`成功删除chunk目录及其所有文件`);
-              break; // 找到并处理一个目录后退出
-            }
-          }
-          
-          // 3. 从数据库中删除记录
+          // 从数据库中删除记录
           await knowledgeBaseModel.deleteFile(file.id);
-          console.log(`从数据库中删除记录: ID ${file.id}`);
-          
           deletedCount++;
         } catch (error) {
-          console.error(`处理文件删除失败 ID:${file.id}`, error);
+          console.error(`删除文件失败: ${file.id}`, error);
           // 继续处理其他文件
         }
       }
       
-      console.log(`总共删除了${deletedCount}个文件及其相关资源`);
       return deletedCount;
     } catch (error) {
       console.error(`彻底删除文件失败: ${error.message}`);
       throw error;
+    }
+  }
+
+  // 根据内容ID检查文件是否存在
+  async checkFileExistsByContent(knowledgeBaseId, contentId) {
+    try {
+      // 获取知识库中的所有文件
+      const files = await knowledgeBaseModel.getKnowledgeBaseFiles(knowledgeBaseId);
+      
+      // 检查是否存在文件内容哈希匹配
+      // 我们需要在数据库模型中添加一个字段来存储内容哈希
+      // 但在此之前，我们可以逐一检查每个文件
+      for (const file of files) {
+        // 跳过已删除的文件
+        if (file.status === 'deleted') continue;
+        
+        // 获取文件的完整路径
+        const filePath = path.join(this.uploadsDir, file.stored_path);
+        
+        // 验证文件是否存在
+        if (!fs.existsSync(filePath)) continue;
+        
+        // 使用DocumentProcessor生成文件内容ID
+        const fileContentId = await this.documentProcessor.generateDocumentId(filePath);
+        
+        // 比较内容ID
+        if (fileContentId === contentId) {
+          return file; // 找到匹配的文件
+        }
+      }
+      
+      // 没有找到匹配的文件
+      return null;
+    } catch (error) {
+      console.error(`检查文件是否存在失败: ${error.message}`);
+      return null;
     }
   }
 }
