@@ -27,4 +27,10 @@ router.post('/:id/cleanup', knowledgeBaseController.cleanupKnowledgeBase);
 // 测试搜索
 router.post('/:id/search', knowledgeBaseController.testSearch);
 
+// 恢复已删除的文件
+router.post('/files/:fileId/restore', knowledgeBaseController.restoreFile);
+
+// 清理知识库中的已删除文件（彻底删除）
+router.post('/:id/purge', knowledgeBaseController.purgeDeletedFiles);
+
 module.exports = router;

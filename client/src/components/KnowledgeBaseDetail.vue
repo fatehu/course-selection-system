@@ -26,35 +26,90 @@
     
     <!-- 文件列表 -->
     <div class="files-section" v-if="!loading">
-      <h3>文件列表</h3>
-      
-      <div v-if="files.length === 0" class="empty-state">
-        <i class="fas fa-file-alt"></i>
-        <p>暂无文件，点击"上传文件"按钮开始上传</p>
+      <!-- 添加切换标签 -->
+      <div class="tabs-header">
+        <div :class="['tab', activeTab === 'active' ? 'active' : '']" @click="activeTab = 'active'">
+          <i class="fas fa-file"></i> 有效文件
+        </div>
+        <div :class="['tab', activeTab === 'deleted' ? 'active' : '']" @click="activeTab = 'deleted'">
+          <i class="fas fa-trash"></i> 回收站
+          <span v-if="deletedFiles.length > 0" class="badge">{{ deletedFiles.length }}</span>
+        </div>
       </div>
       
-      <div v-else class="file-list">
-        <div v-for="file in files" :key="file.id" class="file-item">
-          <div class="file-icon">
-            <i :class="getFileIcon(file.file_type)"></i>
-          </div>
-          
-          <div class="file-details">
-            <div class="file-name">{{ file.original_filename }}</div>
-            <div class="file-meta">
-              <span class="file-type">{{ file.file_type.toUpperCase() }}</span>
-              <span class="file-size">{{ formatFileSize(file.file_size) }}</span>
-              <span :class="['file-status', `status-${file.status}`]">
-                {{ getStatusText(file.status) }}
-              </span>
+      <h3>{{ activeTab === 'active' ? '文件列表' : '已删除文件' }}</h3>
+      
+      <!-- 活动文件列表 -->
+      <div v-if="activeTab === 'active'">
+        <div v-if="activeFiles.length === 0" class="empty-state">
+          <i class="fas fa-file-alt"></i>
+          <p>暂无文件，点击"上传文件"按钮开始上传</p>
+        </div>
+        
+        <div v-else class="file-list">
+          <div v-for="file in activeFiles" :key="file.id" class="file-item">
+            <div class="file-icon">
+              <i :class="getFileIcon(file.file_type)"></i>
+            </div>
+            
+            <div class="file-details">
+              <div class="file-name">{{ file.original_filename }}</div>
+              <div class="file-meta">
+                <span class="file-type">{{ file.file_type.toUpperCase() }}</span>
+                <span class="file-size">{{ formatFileSize(file.file_size) }}</span>
+                <span :class="['file-status', `status-${file.status}`]">
+                  {{ getStatusText(file.status) }}
+                </span>
+              </div>
+            </div>
+            
+            <div class="file-actions">
+              <button class="icon-button" @click="confirmDeleteFile(file)">
+                <i class="fas fa-trash"></i>
+              </button>
             </div>
           </div>
-          
-          <div class="file-actions">
-            <button class="icon-button" @click="confirmDeleteFile(file)">
-              <i class="fas fa-trash"></i>
-            </button>
+        </div>
+      </div>
+      
+      <!-- 已删除文件列表 -->
+      <div v-if="activeTab === 'deleted'">
+        <div v-if="deletedFiles.length === 0" class="empty-state">
+          <i class="fas fa-trash-alt"></i>
+          <p>回收站为空</p>
+        </div>
+        
+        <div v-else class="file-list">
+          <div v-for="file in deletedFiles" :key="file.id" class="file-item deleted-file">
+            <div class="file-icon">
+              <i :class="getFileIcon(file.file_type)"></i>
+            </div>
+            
+            <div class="file-details">
+              <div class="file-name">{{ file.original_filename }}</div>
+              <div class="file-meta">
+                <span class="file-type">{{ file.file_type.toUpperCase() }}</span>
+                <span class="file-size">{{ formatFileSize(file.file_size) }}</span>
+                <span class="file-status status-deleted">已删除</span>
+              </div>
+            </div>
+            
+            <div class="file-actions">
+              <button class="icon-button restore-button" @click="confirmRestoreFile(file)" title="恢复文件">
+                <i class="fas fa-undo"></i>
+              </button>
+              <button class="icon-button purge-button" @click="confirmPurgeFile(file)" title="彻底删除">
+                <i class="fas fa-trash-alt"></i>
+              </button>
+            </div>
           </div>
+        </div>
+        
+        <!-- 清空回收站按钮 -->
+        <div v-if="deletedFiles.length > 0" class="purge-actions">
+          <button class="purge-all-button" @click="confirmPurgeAll">
+            <i class="fas fa-trash-alt"></i> 清空回收站
+          </button>
         </div>
       </div>
     </div>
@@ -128,7 +183,10 @@
         
         <div class="modal-actions">
           <button class="cancel-button" @click="showConfirmDialog = false">取消</button>
-          <button class="confirm-action-button" @click="executeConfirmedAction">
+          <button 
+            :class="['confirm-action-button', confirmDialogActionClass]" 
+            @click="executeConfirmedAction"
+          >
             {{ confirmDialogActionText }}
           </button>
         </div>
@@ -152,18 +210,29 @@ export default {
     return {
       knowledgeBase: {},
       files: [],
+      deletedFiles: [], // 存储已删除的文件
+      activeTab: 'active', // 当前激活的标签
       loading: true,
       showUploadDialog: false,
       showConfirmDialog: false,
       confirmDialogTitle: '',
       confirmDialogMessage: '',
       confirmDialogActionText: '',
+      confirmDialogActionClass: '',
       confirmedAction: null,
       selectedFile: null,
       isDragging: false,
       uploading: false,
-      fileToDelete: null
+      fileToDelete: null,
+      fileToRestore: null, // 要恢复的文件
+      fileToPurge: null    // 要彻底删除的文件
     };
+  },
+  computed: {
+    // 计算活动的文件
+    activeFiles() {
+      return this.files.filter(file => file.status !== 'deleted');
+    }
   },
   mounted() {
     this.fetchKnowledgeBaseDetails();
@@ -178,11 +247,13 @@ export default {
     async fetchKnowledgeBaseDetails() {
       this.loading = true;
       try {
-        const response = await axios.get(`/knowledge-base/${this.id}`);
+        // 修改API调用以获取已删除的文件
+        const response = await axios.get(`/knowledge-base/${this.id}?includeDeleted=true`);
         
         if (response.data.success) {
           this.knowledgeBase = response.data.knowledgeBase || {};
           this.files = response.data.files || [];
+          this.deletedFiles = response.data.deletedFiles || [];
           console.log('获取知识库详情成功:', this.knowledgeBase);
         } else {
           console.error('获取知识库详情失败:', response.data.error);
@@ -228,7 +299,8 @@ export default {
         'pending': '待处理',
         'processing': '处理中',
         'indexed': '已索引',
-        'failed': '处理失败'
+        'failed': '处理失败',
+        'deleted': '已删除'
       };
       
       return statusMap[status] || status;
@@ -312,30 +384,11 @@ export default {
     confirmDeleteFile(file) {
       this.fileToDelete = file;
       this.confirmDialogTitle = '删除文件';
-      this.confirmDialogMessage = `您确定要删除文件"${file.original_filename}"吗？此操作无法撤销。`;
+      this.confirmDialogMessage = `您确定要删除文件"${file.original_filename}"吗？文件将被移至回收站。`;
       this.confirmDialogActionText = '删除';
+      this.confirmDialogActionClass = '';
       this.confirmedAction = this.deleteFile;
       this.showConfirmDialog = true;
-    },
-    
-    // 删除文件
-    async deleteFile() {
-      if (!this.fileToDelete) return;
-      
-      try {
-        const response = await axios.delete(`/knowledge-base/files/${this.fileToDelete.id}`);
-        
-        if (response.data.success) {
-          // 文件删除成功，重新获取文件列表
-          this.fetchKnowledgeBaseDetails();
-        } else {
-          console.error('删除文件失败:', response.data.error);
-          alert(`删除失败: ${response.data.error}`);
-        }
-      } catch (error) {
-        console.error('删除文件出错:', error);
-        alert('删除出错，请稍后再试');
-      }
     },
     
     // 确认重建索引
@@ -343,6 +396,7 @@ export default {
       this.confirmDialogTitle = '重建索引';
       this.confirmDialogMessage = '重建索引将重新处理所有文件，这可能需要较长时间。确定要继续吗？';
       this.confirmDialogActionText = '重建';
+      this.confirmDialogActionClass = '';
       this.confirmedAction = this.rebuildIndex;
       this.showConfirmDialog = true;
     },
@@ -369,7 +423,7 @@ export default {
       }
     },
     
-    // 删除文件
+    // 删除文件（软删除）
     async deleteFile() {
       if (!this.fileToDelete) return;
       
@@ -378,7 +432,7 @@ export default {
         
         if (response.data.success) {
           // 显示成功消息
-          const successMessage = response.data.message || '文件删除成功';
+          const successMessage = response.data.message || '文件已移至回收站';
           console.log(successMessage);
           alert(successMessage);
           
@@ -392,6 +446,119 @@ export default {
       } catch (error) {
         console.error('删除文件出错:', error);
         alert('删除出错，请稍后再试');
+      } finally {
+        this.showConfirmDialog = false;
+      }
+    },
+    
+    // 恢复文件确认
+    confirmRestoreFile(file) {
+      this.fileToRestore = file;
+      this.confirmDialogTitle = '恢复文件';
+      this.confirmDialogMessage = `您确定要恢复文件"${file.original_filename}"吗？`;
+      this.confirmDialogActionText = '恢复';
+      this.confirmDialogActionClass = 'restore-button-dialog';
+      this.confirmedAction = this.restoreFile;
+      this.showConfirmDialog = true;
+    },
+    
+    // 恢复文件
+    async restoreFile() {
+      if (!this.fileToRestore) return;
+      
+      try {
+        const response = await axios.post(`/knowledge-base/files/${this.fileToRestore.id}/restore`);
+        
+        if (response.data.success) {
+          // 显示成功消息
+          const successMessage = response.data.message || '文件恢复成功';
+          console.log(successMessage);
+          alert(successMessage);
+          
+          // 文件恢复成功，重新获取文件列表
+          this.fetchKnowledgeBaseDetails();
+          this.fileToRestore = null;
+        } else {
+          console.error('恢复文件失败:', response.data.error);
+          alert(`恢复失败: ${response.data.error}`);
+        }
+      } catch (error) {
+        console.error('恢复文件出错:', error);
+        alert('恢复出错，请稍后再试');
+      } finally {
+        this.showConfirmDialog = false;
+      }
+    },
+    
+    // 彻底删除文件确认
+    confirmPurgeFile(file) {
+      this.fileToPurge = file;
+      this.confirmDialogTitle = '彻底删除文件';
+      this.confirmDialogMessage = `您确定要彻底删除文件"${file.original_filename}"吗？此操作无法撤销！`;
+      this.confirmDialogActionText = '彻底删除';
+      this.confirmDialogActionClass = 'danger-button';
+      this.confirmedAction = this.purgeFile;
+      this.showConfirmDialog = true;
+    },
+    
+    // 彻底删除文件
+    async purgeFile() {
+      if (!this.fileToPurge) return;
+      
+      try {
+        const response = await axios.delete(`/knowledge-base/files/${this.fileToPurge.id}?purge=true`);
+        
+        if (response.data.success) {
+          // 显示成功消息
+          const successMessage = response.data.message || '文件已彻底删除';
+          console.log(successMessage);
+          alert(successMessage);
+          
+          // 重新获取文件列表
+          this.fetchKnowledgeBaseDetails();
+          this.fileToPurge = null;
+        } else {
+          console.error('彻底删除文件失败:', response.data.error);
+          alert(`删除失败: ${response.data.error}`);
+        }
+      } catch (error) {
+        console.error('彻底删除文件出错:', error);
+        alert('删除出错，请稍后再试');
+      } finally {
+        this.showConfirmDialog = false;
+      }
+    },
+    
+    // 确认清空回收站
+    confirmPurgeAll() {
+      this.confirmDialogTitle = '清空回收站';
+      this.confirmDialogMessage = `您确定要清空回收站中的所有文件吗？此操作无法撤销！`;
+      this.confirmDialogActionText = '清空';
+      this.confirmDialogActionClass = 'danger-button';
+      this.confirmedAction = this.purgeAllDeletedFiles;
+      this.showConfirmDialog = true;
+    },
+    
+    // 清空回收站（彻底删除所有已删除文件）
+    async purgeAllDeletedFiles() {
+      try {
+        const response = await axios.post(`/knowledge-base/${this.id}/purge`);
+        
+        if (response.data.success) {
+          // 显示成功消息
+          const successMessage = response.data.message || '回收站已清空';
+          console.log(successMessage);
+          alert(successMessage);
+          
+          // 重新获取文件列表
+          this.fetchKnowledgeBaseDetails();
+        } else {
+          console.error('清空回收站失败:', response.data.error);
+          alert(`清空失败: ${response.data.error}`);
+        }
+      } catch (error) {
+        console.error('清空回收站出错:', error);
+        alert('操作出错，请稍后再试');
       } finally {
         this.showConfirmDialog = false;
       }
@@ -516,6 +683,41 @@ export default {
   color: #333;
 }
 
+/* 标签样式 */
+.tabs-header {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tab {
+  padding: 10px 16px;
+  cursor: pointer;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.tab.active {
+  color: #5E35B1;
+  border-bottom: 2px solid #5E35B1;
+}
+
+.tab i {
+  font-size: 0.9rem;
+}
+
+.badge {
+  background-color: #f44336;
+  color: white;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 4px;
+}
+
 .file-list {
   display: flex;
   flex-direction: column;
@@ -533,6 +735,12 @@ export default {
 
 .file-item:hover {
   background-color: #f0f0f0;
+}
+
+/* 删除文件样式 */
+.deleted-file {
+  opacity: 0.8;
+  background-color: #ffebee;
 }
 
 .file-icon {
@@ -596,6 +804,11 @@ export default {
   color: #f44336;
 }
 
+.status-deleted {
+  background-color: #ffebee;
+  color: #f44336;
+}
+
 .file-actions {
   display: flex;
   gap: 8px;
@@ -617,6 +830,46 @@ export default {
 .icon-button:hover {
   background-color: #e0e0e0;
   color: #333;
+}
+
+.restore-button {
+  color: #4caf50;
+}
+
+.restore-button:hover {
+  background-color: #e8f5e9;
+  color: #4caf50;
+}
+
+.purge-button {
+  color: #f44336;
+}
+
+.purge-button:hover {
+  background-color: #ffebee;
+  color: #f44336;
+}
+
+.purge-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.purge-all-button {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.purge-all-button:hover {
+  background-color: #d32f2f;
 }
 
 .empty-state {
@@ -713,6 +966,22 @@ export default {
 
 .confirm-action-button:hover {
   background-color: #4527A0;
+}
+
+.danger-button {
+  background-color: #f44336;
+}
+
+.danger-button:hover {
+  background-color: #d32f2f;
+}
+
+.restore-button-dialog {
+  background-color: #4caf50;
+}
+
+.restore-button-dialog:hover {
+  background-color: #3b8c3b;
 }
 
 .file-upload-area {

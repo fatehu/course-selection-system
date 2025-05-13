@@ -1,6 +1,7 @@
 const knowledgeBaseService = require('../services/knowledgeBaseService');
 const multer = require('multer');
 const path = require('path');
+const knowledgeBaseModel = require('../models/knowledgeBaseModel'); 
 
 // 内存存储，用于处理文件上传
 const storage = multer.memoryStorage();
@@ -72,6 +73,8 @@ const getAllKnowledgeBases = async (req, res) => {
 const getKnowledgeBase = async (req, res) => {
   try {
     const { id } = req.params;
+    const includeDeleted = req.query.includeDeleted === 'true'; // 是否包含已删除文件
+    
     const knowledgeBase = await knowledgeBaseService.getKnowledgeBase(id);
     
     if (!knowledgeBase) {
@@ -84,10 +87,17 @@ const getKnowledgeBase = async (req, res) => {
     // 获取知识库文件
     const files = await knowledgeBaseService.getKnowledgeBaseFiles(id);
     
+    // 获取已删除文件（如果需要）
+    let deletedFiles = [];
+    if (includeDeleted) {
+      deletedFiles = await knowledgeBaseModel.getDeletedFiles(id);
+    }
+    
     res.json({
       success: true,
       knowledgeBase,
-      files
+      files,
+      deletedFiles
     });
   } catch (error) {
     console.error("获取知识库失败:", error);
@@ -225,25 +235,45 @@ const getFiles = async (req, res) => {
   }
 };
 
-// 删除文件（完整实现）
+// 删除文件（支持软删除和彻底删除）
 const deleteFile = async (req, res) => {
   try {
     const { fileId } = req.params;
+    const purge = req.query.purge === 'true'; // 是否彻底删除
     
-    console.log(`开始删除文件: ${fileId}`);
-    const success = await knowledgeBaseService.deleteFile(fileId);
+    console.log(`${purge ? '彻底删除' : '软删除'}文件: ${fileId}`);
     
-    if (!success) {
-      return res.status(404).json({
-        success: false,
-        error: "文件不存在或删除失败"
+    if (purge) {
+      // 彻底删除
+      const success = await knowledgeBaseService.deleteFile(fileId, true);
+      
+      if (!success) {
+        return res.status(404).json({
+          success: false,
+          error: "文件不存在或删除失败"
+        });
+      }
+      
+      res.json({
+        success: true,
+        message: "文件已彻底删除"
+      });
+    } else {
+      // 软删除
+      const success = await knowledgeBaseService.markFileAsDeleted(fileId);
+      
+      if (!success) {
+        return res.status(404).json({
+          success: false,
+          error: "文件不存在或删除失败"
+        });
+      }
+      
+      res.json({
+        success: true,
+        message: "文件已移至回收站"
       });
     }
-    
-    res.json({
-      success: true,
-      message: "文件已成功删除，相关向量也已从索引中移除"
-    });
   } catch (error) {
     console.error("删除文件失败:", error);
     res.status(500).json({
@@ -331,6 +361,56 @@ const cleanupKnowledgeBase = async (req, res) => {
   }
 };
 
+// 恢复已删除的文件
+const restoreFile = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    
+    console.log(`开始恢复文件: ${fileId}`);
+    const success = await knowledgeBaseService.restoreFile(fileId);
+    
+    if (!success) {
+      return res.status(404).json({
+        success: false,
+        error: "文件不存在或恢复失败"
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: "文件已成功恢复"
+    });
+  } catch (error) {
+    console.error("恢复文件失败:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+// 彻底删除已软删除的文件
+const purgeDeletedFiles = async (req, res) => {
+  try {
+    const { id } = req.params; // 知识库ID
+    
+    console.log(`开始彻底删除知识库 ${id} 中的已删除文件`);
+    const purgedCount = await knowledgeBaseService.purgeDeletedFiles(id);
+    
+    res.json({
+      success: true,
+      message: `已彻底删除${purgedCount}个文件`,
+      purgedCount
+    });
+  } catch (error) {
+    console.error("彻底删除文件失败:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
 module.exports = {
   createKnowledgeBase,
   getAllKnowledgeBases,
@@ -342,5 +422,7 @@ module.exports = {
   deleteFile,
   rebuildIndex,
   testSearch,
-  cleanupKnowledgeBase
+  cleanupKnowledgeBase,
+  restoreFile,
+  purgeDeletedFiles
 };

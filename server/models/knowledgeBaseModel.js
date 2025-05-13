@@ -148,6 +148,45 @@ const deleteFile = async (fileId) => {
   }
 };
 
+// 获取知识库中被标记为删除的文件
+const getDeletedFiles = async (knowledgeBaseId) => {
+  const sql = 'SELECT * FROM knowledge_files WHERE knowledge_base_id = ? AND status = "deleted" ORDER BY created_at DESC';
+  
+  try {
+    const [rows] = await pool.query(sql, [knowledgeBaseId]);
+    return rows;
+  } catch (error) {
+    console.error('获取已删除文件列表失败:', error);
+    throw error;
+  }
+};
+
+// 将文件标记为删除状态
+const markFileAsDeleted = async (fileId) => {
+  const sql = 'UPDATE knowledge_files SET status = "deleted" WHERE id = ?';
+  
+  try {
+    const [result] = await pool.query(sql, [fileId]);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error('标记文件为删除状态失败:', error);
+    throw error;
+  }
+};
+
+// 恢复被标记为删除的文件
+const restoreDeletedFile = async (fileId) => {
+  const sql = 'UPDATE knowledge_files SET status = "indexed" WHERE id = ? AND status = "deleted"';
+  
+  try {
+    const [result] = await pool.query(sql, [fileId]);
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error('恢复删除文件失败:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   createKnowledgeBase,
   getKnowledgeBases,
@@ -158,5 +197,8 @@ module.exports = {
   updateFileStatus,
   getKnowledgeBaseFiles,
   getFile,
-  deleteFile
+  deleteFile,
+  getDeletedFiles,
+  markFileAsDeleted,
+  restoreDeletedFile
 };

@@ -274,6 +274,35 @@ class EnhancedVectorStore {
       fileStats: Array.from(fileStats.entries())
     };
   }
+
+  // 恢复文档（从已删除集合中移除）
+  restoreDocuments(fileId) {
+    let restoredCount = 0;
+    const fileIdStr = String(fileId);
+    const fileIdNum = parseInt(fileId);
+    
+    // 遍历所有已删除的文档
+    this.documents.forEach((doc) => {
+      if (doc.metadata && doc.metadata.fileId) {
+        const docFileId = doc.metadata.fileId;
+        // 比较各种可能的格式
+        if ((docFileId === fileId || 
+            docFileId === fileIdStr || 
+            docFileId === fileIdNum ||
+            String(docFileId) === fileIdStr ||
+            parseInt(docFileId) === fileIdNum) && 
+            this.deletedDocuments.has(doc.id)) {
+          // 从已删除集合中移除
+          this.deletedDocuments.delete(doc.id);
+          restoredCount++;
+          console.log(`恢复文档 ${doc.id} (fileId: ${docFileId})`);
+        }
+      }
+    });
+    
+    console.log(`恢复了${restoredCount}个来自文件${fileId}的文档`);
+    return restoredCount;
+  }
 }
 
 module.exports = EnhancedVectorStore;

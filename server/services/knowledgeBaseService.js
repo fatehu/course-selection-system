@@ -3,7 +3,7 @@ const fs = require('fs-extra');
 const knowledgeBaseModel = require('../models/knowledgeBaseModel');
 const DocumentProcessor = require('./advisor/documentProcessor');
 const EmbeddingService = require('./advisor/embeddingService');
-const EnhancedVectorStore = require('./advisor/vectorStore'); // Use the new enhanced version
+const EnhancedVectorStore = require('./advisor/vectorStore');
 
 class KnowledgeBaseService {
   constructor() {
@@ -276,7 +276,40 @@ class KnowledgeBaseService {
       throw error;
     }
   }
-  
+
+  // 将文件标记为已删除（软删除）
+  async markFileAsDeleted(fileId) {
+    try {
+      // 获取文件信息
+      const fileInfo = await knowledgeBaseModel.getFile(fileId);
+      if (!fileInfo) {
+        throw new Error(`文件不存在: ID ${fileId}`);
+      }
+      
+      // 先在数据库中标记文件为删除状态
+      const success = await knowledgeBaseModel.markFileAsDeleted(fileId);
+      
+      if (!success) {
+        throw new Error(`标记文件删除失败: ID ${fileId}`);
+      }
+      
+      // 获取向量存储并标记文档为已删除
+      const vectorStore = this.getVectorStore(fileInfo.knowledge_base_id);
+      const deletedCount = vectorStore.markDocumentsAsDeleted(fileId);
+      
+      // 保存更新后的向量存储
+      if (deletedCount > 0) {
+        vectorStore.save();
+        console.log(`标记了${deletedCount}个文档为已删除`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`标记文件为删除状态失败: ${error.message}`);
+      throw error;
+    }
+  }
+
   // Clean up knowledge base (physically delete all documents marked as deleted)
   async cleanupKnowledgeBase(knowledgeBaseId) {
     try {
@@ -291,6 +324,116 @@ class KnowledgeBaseService {
       return purgedCount;
     } catch (error) {
       console.error(`Failed to clean up knowledge base: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  // 恢复被软删除的文件
+  async restoreFile(fileId) {
+    try {
+      // 获取文件信息
+      const fileInfo = await knowledgeBaseModel.getFile(fileId);
+      if (!fileInfo) {
+        throw new Error(`文件不存在: ID ${fileId}`);
+      }
+      
+      // 在数据库中恢复文件状态
+      const success = await knowledgeBaseModel.restoreDeletedFile(fileId);
+      
+      if (!success) {
+        throw new Error(`恢复文件失败: ID ${fileId}`);
+      }
+      
+      // 获取向量存储并将文档从已删除集合中移除
+      const vectorStore = this.getVectorStore(fileInfo.knowledge_base_id);
+      const restoredCount = vectorStore.restoreDocuments(fileId);
+      
+      // 保存更新后的向量存储
+      if (restoredCount > 0) {
+        vectorStore.save();
+        console.log(`已恢复${restoredCount}个文档`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`恢复文件失败: ${error.message}`);
+      throw error;
+    }
+  }
+
+  // 彻底删除已软删除的文件
+  async purgeDeletedFiles(knowledgeBaseId) {
+    try {
+      // 获取知识库中已删除的文件
+      const deletedFiles = await knowledgeBaseModel.getDeletedFiles(knowledgeBaseId);
+      console.log(`找到${deletedFiles.length}个已删除文件需要清理`);
+      
+      // 获取向量存储
+      const vectorStore = this.getVectorStore(knowledgeBaseId);
+      
+      // 彻底删除已标记为删除的文档
+      const purgedCount = vectorStore.purgeDeletedDocuments();
+      console.log(`从向量存储中删除了${purgedCount}个文档`);
+      vectorStore.save();
+      
+      // 删除物理文件、chunk文件和数据库记录
+      let deletedCount = 0;
+      for (const file of deletedFiles) {
+        try {
+          // 1. 处理原始文件
+          const filePath = path.join(this.uploadsDir, file.stored_path);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`删除了原始文件: ${filePath}`);
+          }
+          
+          // 2. 处理chunk文件目录
+          const fileDir = path.dirname(filePath);
+          const fileName = path.basename(filePath);
+          const fileNameWithoutExt = path.basename(filePath, path.extname(filePath));
+          
+          // 查找可能的chunk目录命名模式
+          const possibleChunkDirs = [
+            path.join(fileDir, `${fileNameWithoutExt}_chunks`),
+            path.join(fileDir, `${file.id}_chunks`),
+            path.join(fileDir, `file_${file.id}_chunks`)
+          ];
+          
+          // 检查并删除chunk目录
+          for (const chunkDir of possibleChunkDirs) {
+            if (fs.existsSync(chunkDir) && fs.statSync(chunkDir).isDirectory()) {
+              console.log(`找到chunk目录: ${chunkDir}`);
+              
+              // 删除目录中的所有文件
+              const chunkFiles = fs.readdirSync(chunkDir);
+              console.log(`该目录包含${chunkFiles.length}个chunk文件`);
+              
+              for (const chunkFile of chunkFiles) {
+                fs.unlinkSync(path.join(chunkDir, chunkFile));
+              }
+              
+              // 删除空目录
+              fs.rmdirSync(chunkDir);
+              console.log(`成功删除chunk目录及其所有文件`);
+              break; // 找到并处理一个目录后退出
+            }
+          }
+          
+          // 3. 从数据库中删除记录
+          await knowledgeBaseModel.deleteFile(file.id);
+          console.log(`从数据库中删除记录: ID ${file.id}`);
+          
+          deletedCount++;
+        } catch (error) {
+          console.error(`处理文件删除失败 ID:${file.id}`, error);
+          // 继续处理其他文件
+        }
+      }
+      
+      console.log(`总共删除了${deletedCount}个文件及其相关资源`);
+      return deletedCount;
+    } catch (error) {
+      console.error(`彻底删除文件失败: ${error.message}`);
       throw error;
     }
   }
