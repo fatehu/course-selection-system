@@ -137,6 +137,8 @@ const updateKnowledgeBase = async (req, res) => {
 const deleteKnowledgeBase = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    console.log(`开始删除知识库: ${id}`);
     const success = await knowledgeBaseService.deleteKnowledgeBase(id);
     
     if (!success) {
@@ -148,7 +150,7 @@ const deleteKnowledgeBase = async (req, res) => {
     
     res.json({
       success: true,
-      message: "知识库删除成功"
+      message: "知识库及其所有文件已成功删除"
     });
   } catch (error) {
     console.error("删除知识库失败:", error);
@@ -179,11 +181,14 @@ const uploadFile = async (req, res) => {
       
       const { id } = req.params; // 知识库ID
       
+      console.log(`上传文件到知识库 ${id}: ${req.file.originalname}`);
+      
       // 保存文件
       const fileId = await knowledgeBaseService.saveUploadedFile(id, req.file);
       
       // 异步处理文件
       knowledgeBaseService.processFile(fileId)
+        .then(() => console.log(`文件处理完成: ${fileId}`))
         .catch(error => console.error(`文件处理失败(ID: ${fileId}):`, error));
       
       res.status(201).json({
@@ -220,10 +225,12 @@ const getFiles = async (req, res) => {
   }
 };
 
-// 删除文件
+// 删除文件（完整实现）
 const deleteFile = async (req, res) => {
   try {
     const { fileId } = req.params;
+    
+    console.log(`开始删除文件: ${fileId}`);
     const success = await knowledgeBaseService.deleteFile(fileId);
     
     if (!success) {
@@ -235,7 +242,7 @@ const deleteFile = async (req, res) => {
     
     res.json({
       success: true,
-      message: "文件删除成功"
+      message: "文件已成功删除，相关向量也已从索引中移除"
     });
   } catch (error) {
     console.error("删除文件失败:", error);
@@ -251,13 +258,18 @@ const rebuildIndex = async (req, res) => {
   try {
     const { id } = req.params; // 知识库ID
     
+    console.log(`开始重建知识库 ${id} 的索引`);
+    
     // 异步重建索引
     knowledgeBaseService.rebuildKnowledgeBaseIndex(id)
+      .then(result => {
+        console.log(`知识库 ${id} 索引重建完成:`, result);
+      })
       .catch(error => console.error(`重建索引失败(ID: ${id}):`, error));
     
     res.json({
       success: true,
-      message: "索引重建已启动"
+      message: "索引重建已启动，这将清理所有已删除的文档并重新索引现有文件"
     });
   } catch (error) {
     console.error("启动索引重建失败:", error);
@@ -281,6 +293,7 @@ const testSearch = async (req, res) => {
       });
     }
     
+    console.log(`搜索知识库 ${id}: "${query}"`);
     const results = await knowledgeBaseService.searchKnowledgeBase(id, query, 5);
     
     res.json({
@@ -289,6 +302,28 @@ const testSearch = async (req, res) => {
     });
   } catch (error) {
     console.error("搜索知识库失败:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+// 清理知识库（物理删除所有已标记为删除的文档）
+const cleanupKnowledgeBase = async (req, res) => {
+  try {
+    const { id } = req.params; // 知识库ID
+    
+    console.log(`开始清理知识库 ${id}`);
+    const purgedCount = await knowledgeBaseService.cleanupKnowledgeBase(id);
+    
+    res.json({
+      success: true,
+      message: `知识库清理完成，物理删除了${purgedCount}个文档`,
+      purgedCount
+    });
+  } catch (error) {
+    console.error("清理知识库失败:", error);
     res.status(500).json({
       success: false,
       error: error.message || "服务器内部错误"
@@ -306,5 +341,6 @@ module.exports = {
   getFiles,
   deleteFile,
   rebuildIndex,
-  testSearch
+  testSearch,
+  cleanupKnowledgeBase
 };

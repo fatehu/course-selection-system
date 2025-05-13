@@ -21,6 +21,9 @@ router.delete('/files/:fileId', knowledgeBaseController.deleteFile);
 // 知识库索引管理
 router.post('/:id/rebuild', knowledgeBaseController.rebuildIndex);
 
+// 清理知识库（删除已标记的文档）
+router.post('/:id/cleanup', knowledgeBaseController.cleanupKnowledgeBase);
+
 // 测试搜索
 router.post('/:id/search', knowledgeBaseController.testSearch);
 

@@ -3,7 +3,7 @@ const fs = require('fs-extra');
 const knowledgeBaseModel = require('../models/knowledgeBaseModel');
 const DocumentProcessor = require('./advisor/documentProcessor');
 const EmbeddingService = require('./advisor/embeddingService');
-const VectorStore = require('./advisor/vectorStore');
+const EnhancedVectorStore = require('./advisor/vectorStore'); // Use the new enhanced version
 
 class KnowledgeBaseService {
   constructor() {
@@ -11,81 +11,103 @@ class KnowledgeBaseService {
     this.embeddingService = new EmbeddingService();
     this.uploadsDir = path.join(process.cwd(), 'uploads/knowledge_base');
     
-    // 确保上传目录存在
+    // Ensure upload directory exists
     fs.ensureDirSync(this.uploadsDir);
   }
   
-  // 为知识库创建vector store存储路径
+  // Get vector store storage path for a knowledge base
   getVectorStorePath(knowledgeBaseId) {
     const storeDir = path.join(process.cwd(), 'data/vector_stores');
     fs.ensureDirSync(storeDir);
     return path.join(storeDir, `kb_${knowledgeBaseId}.json`);
   }
   
-  // 获取知识库的向量存储
+  // Get vector store for a knowledge base (using enhanced version)
   getVectorStore(knowledgeBaseId) {
     const storePath = this.getVectorStorePath(knowledgeBaseId);
-    const vectorStore = new VectorStore({ storePath });
-    vectorStore.load(); // 尝试加载现有数据
+    const vectorStore = new EnhancedVectorStore({ storePath });
+    vectorStore.load(); // Try to load existing data
     return vectorStore;
   }
   
-  // 创建知识库
+  // Create knowledge base
   async createKnowledgeBase(name, description, userId) {
     return await knowledgeBaseModel.createKnowledgeBase(name, description, userId);
   }
   
-  // 获取所有知识库
+  // Get all knowledge bases
   async getAllKnowledgeBases() {
     return await knowledgeBaseModel.getKnowledgeBases();
   }
   
-  // 获取单个知识库
+  // Get single knowledge base
   async getKnowledgeBase(id) {
     return await knowledgeBaseModel.getKnowledgeBase(id);
   }
   
-  // 更新知识库
+  // Update knowledge base
   async updateKnowledgeBase(id, name, description) {
     return await knowledgeBaseModel.updateKnowledgeBase(id, name, description);
   }
   
-  // 删除知识库
+  // Delete knowledge base
   async deleteKnowledgeBase(id) {
-    // 删除向量存储文件
-    const storePath = this.getVectorStorePath(id);
-    if (fs.existsSync(storePath)) {
-      fs.unlinkSync(storePath);
+    try {
+      // Get all files in the knowledge base
+      const files = await knowledgeBaseModel.getKnowledgeBaseFiles(id);
+      
+      // Delete all physical files
+      for (const file of files) {
+        const filePath = path.join(this.uploadsDir, file.stored_path);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+      
+      // Delete knowledge base folder
+      const kbDir = path.join(this.uploadsDir, `kb_${id}`);
+      if (fs.existsSync(kbDir)) {
+        fs.removeSync(kbDir);
+      }
+      
+      // Delete vector store file
+      const storePath = this.getVectorStorePath(id);
+      if (fs.existsSync(storePath)) {
+        fs.unlinkSync(storePath);
+      }
+      
+      // Delete database records (cascade deletes all related file records)
+      return await knowledgeBaseModel.deleteKnowledgeBase(id);
+    } catch (error) {
+      console.error(`Failed to delete knowledge base: ${error.message}`);
+      throw error;
     }
-    
-    // 删除数据库记录
-    return await knowledgeBaseModel.deleteKnowledgeBase(id);
   }
   
-  // 获取知识库文件列表
+  // Get knowledge base files list
   async getKnowledgeBaseFiles(knowledgeBaseId) {
     return await knowledgeBaseModel.getKnowledgeBaseFiles(knowledgeBaseId);
   }
   
-  // 保存上传的文件
+  // Save uploaded file
   async saveUploadedFile(knowledgeBaseId, file) {
-    // 创建知识库文件夹（如果不存在）
+    // Create knowledge base folder if it doesn't exist
     const kbDir = path.join(this.uploadsDir, `kb_${knowledgeBaseId}`);
     fs.ensureDirSync(kbDir);
     
-    // 生成唯一文件名
+    // Generate unique filename
     const timestamp = Date.now();
     const fileExtension = path.extname(file.originalname);
     const storedFilename = `${timestamp}_${path.basename(file.originalname, fileExtension)}${fileExtension}`;
     const storedPath = path.join(kbDir, storedFilename);
     
-    // 移动文件
+    // Save file
     fs.writeFileSync(storedPath, file.buffer);
     
-    // 获取文件类型
-    const fileType = fileExtension.substring(1); // 移除点号
+    // Get file type
+    const fileType = fileExtension.substring(1); // Remove dot
     
-    // 保存文件记录到数据库
+    // Save file record to database
     return await knowledgeBaseModel.addFile(
       knowledgeBaseId,
       file.originalname,
@@ -95,122 +117,182 @@ class KnowledgeBaseService {
     );
   }
   
-  // 处理文件并添加到向量存储
+  // Process file and add to vector store
   async processFile(fileId) {
-    // 获取文件信息
+    // Get file info
     const fileInfo = await knowledgeBaseModel.getFile(fileId);
     if (!fileInfo) {
-      throw new Error(`文件不存在: ID ${fileId}`);
+      throw new Error(`File not found: ID ${fileId}`);
     }
     
     try {
-      // 更新状态为处理中
+      // Update status to processing
       await knowledgeBaseModel.updateFileStatus(fileId, 'processing');
       
-      // 文件完整路径
+      // Full file path
       const filePath = path.join(this.uploadsDir, fileInfo.stored_path);
       
-      // 处理文件并分块
+      // Process file and split into chunks
       const chunks = await this.documentProcessor.processFile(filePath);
       
-      // 创建向量存储
+      // Get vector store
       const vectorStore = this.getVectorStore(fileInfo.knowledge_base_id);
       
-      // 生成嵌入向量
+      // Generate embeddings
       const contentsOnly = chunks.map(chunk => chunk.content);
       const embeddings = await this.embeddingService.getBatchEmbeddings(contentsOnly);
       
-      // 为每个文档添加文件来源信息
+      // Enhance chunks with file metadata and unique IDs
       const enhancedChunks = chunks.map((chunk, index) => ({
         ...chunk,
+        id: `file_${fileInfo.id}_chunk_${index}`, // Add unique ID
         metadata: {
           ...chunk.metadata,
-          fileId: fileInfo.id,
+          fileId: fileInfo.id, // Ensure this is the numeric ID from database
           fileName: fileInfo.original_filename
         }
       }));
       
-      // 添加到向量存储
+      // Add to vector store (this will automatically remove old documents from same file)
       vectorStore.addDocuments(enhancedChunks, embeddings);
       
-      // 保存向量存储
+      // Save vector store
       vectorStore.save();
       
-      // 更新文件状态为已索引
+      // Update file status to indexed
       await knowledgeBaseModel.updateFileStatus(fileId, 'indexed', chunks.length);
       
+      console.log(`File processed successfully: ${fileInfo.original_filename}, created ${chunks.length} chunks`);
       return true;
     } catch (error) {
-      console.error(`处理文件失败: ${error.message}`);
+      console.error(`Failed to process file: ${error.message}`);
       await knowledgeBaseModel.updateFileStatus(fileId, 'failed');
       throw error;
     }
   }
   
-  // 删除文件
+  // Delete file (complete implementation)
   async deleteFile(fileId) {
-    // 获取文件信息
-    const fileInfo = await knowledgeBaseModel.getFile(fileId);
-    if (!fileInfo) {
-      throw new Error(`文件不存在: ID ${fileId}`);
-    }
-    
-    // 物理文件路径
-    const filePath = path.join(this.uploadsDir, fileInfo.stored_path);
-    
-    // 如果文件存在，则删除
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    
-    // 删除数据库记录
-    return await knowledgeBaseModel.deleteFile(fileId);
-    
-    // 注意：这里并没有从向量存储中删除该文件的向量
-    // 要实现完整的删除，需要重新构建整个知识库的向量存储
-  }
-  
-  // 重建知识库索引
-  async rebuildKnowledgeBaseIndex(knowledgeBaseId) {
-    // 获取知识库所有文件
-    const files = await knowledgeBaseModel.getKnowledgeBaseFiles(knowledgeBaseId);
-    
-    // 删除现有向量存储
-    const storePath = this.getVectorStorePath(knowledgeBaseId);
-    if (fs.existsSync(storePath)) {
-      fs.unlinkSync(storePath);
-    }
-    
-    // 创建新的向量存储
-    const vectorStore = this.getVectorStore(knowledgeBaseId);
-    
-    // 处理每一个文件
-    for (const file of files) {
-      // 重置文件状态
-      await knowledgeBaseModel.updateFileStatus(file.id, 'pending', 0);
-      
-      // 重新处理文件
-      try {
-        await this.processFile(file.id);
-      } catch (error) {
-        console.error(`重建索引时处理文件失败: ${file.original_filename}`, error);
-        // 继续处理其他文件
+    try {
+      // Get file info
+      const fileInfo = await knowledgeBaseModel.getFile(fileId);
+      if (!fileInfo) {
+        throw new Error(`File not found: ID ${fileId}`);
       }
+      
+      // Get vector store and mark documents as deleted
+      const vectorStore = this.getVectorStore(fileInfo.knowledge_base_id);
+      const deletedCount = vectorStore.markDocumentsAsDeleted(fileId);
+      
+      // Save updated vector store
+      if (deletedCount > 0) {
+        vectorStore.save();
+        console.log(`Marked ${deletedCount} documents as deleted from vector store`);
+      }
+      
+      // Delete physical file
+      const filePath = path.join(this.uploadsDir, fileInfo.stored_path);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Deleted physical file: ${filePath}`);
+      }
+      
+      // Delete database record
+      const success = await knowledgeBaseModel.deleteFile(fileId);
+      
+      console.log(`File deletion successful: ${fileInfo.original_filename}`);
+      return success;
+    } catch (error) {
+      console.error(`Failed to delete file: ${error.message}`);
+      throw error;
     }
-    
-    return true;
   }
   
-  // 搜索知识库
+  // Rebuild knowledge base index (including cleanup of deleted documents)
+  async rebuildKnowledgeBaseIndex(knowledgeBaseId) {
+    try {
+      console.log(`Starting rebuild of knowledge base ${knowledgeBaseId} index`);
+      
+      // Get all files in the knowledge base
+      const files = await knowledgeBaseModel.getKnowledgeBaseFiles(knowledgeBaseId);
+      
+      // Delete existing vector store
+      const storePath = this.getVectorStorePath(knowledgeBaseId);
+      if (fs.existsSync(storePath)) {
+        fs.unlinkSync(storePath);
+        console.log(`Deleted old vector store: ${storePath}`);
+      }
+      
+      // Create new vector store
+      const vectorStore = this.getVectorStore(knowledgeBaseId);
+      
+      // Process each file
+      let successCount = 0;
+      let failCount = 0;
+      
+      for (const file of files) {
+        // Reset file status
+        await knowledgeBaseModel.updateFileStatus(file.id, 'pending', 0);
+        
+        // Reprocess file
+        try {
+          await this.processFile(file.id);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to process file during rebuild: ${file.original_filename}`, error);
+          failCount++;
+          // Continue processing other files
+        }
+      }
+      
+      console.log(`Index rebuild complete: ${successCount} successful, ${failCount} failed`);
+      return { success: successCount, failed: failCount };
+    } catch (error) {
+      console.error(`Failed to rebuild knowledge base index: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  // Search knowledge base (automatically filters deleted documents)
   async searchKnowledgeBase(knowledgeBaseId, query, topK = 5) {
-    // 获取向量存储
-    const vectorStore = this.getVectorStore(knowledgeBaseId);
-    
-    // 为查询生成嵌入向量
-    const queryEmbedding = await this.embeddingService.getEmbedding(query);
-    
-    // 搜索相关文档
-    return vectorStore.similaritySearch(queryEmbedding, topK);
+    try {
+      // Get vector store
+      const vectorStore = this.getVectorStore(knowledgeBaseId);
+      
+      // Get statistics
+      const stats = vectorStore.getStats();
+      console.log(`Searching knowledge base ${knowledgeBaseId}: ${stats.activeDocuments} active documents, ${stats.deletedDocuments} deleted documents`);
+      
+      // Generate embedding for query
+      const queryEmbedding = await this.embeddingService.getEmbedding(query);
+      
+      // Search for related documents (automatically filters deleted ones)
+      const results = vectorStore.similaritySearch(queryEmbedding, topK);
+      
+      console.log(`Found ${results.length} related documents`);
+      return results;
+    } catch (error) {
+      console.error(`Failed to search knowledge base: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  // Clean up knowledge base (physically delete all documents marked as deleted)
+  async cleanupKnowledgeBase(knowledgeBaseId) {
+    try {
+      const vectorStore = this.getVectorStore(knowledgeBaseId);
+      const purgedCount = vectorStore.purgeDeletedDocuments();
+      
+      if (purgedCount > 0) {
+        vectorStore.save();
+        console.log(`Cleaned up knowledge base ${knowledgeBaseId}: physically deleted ${purgedCount} documents`);
+      }
+      
+      return purgedCount;
+    } catch (error) {
+      console.error(`Failed to clean up knowledge base: ${error.message}`);
+      throw error;
+    }
   }
 }
 

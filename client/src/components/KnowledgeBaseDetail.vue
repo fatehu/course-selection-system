@@ -369,6 +369,34 @@ export default {
       }
     },
     
+    // 删除文件
+    async deleteFile() {
+      if (!this.fileToDelete) return;
+      
+      try {
+        const response = await axios.delete(`/knowledge-base/files/${this.fileToDelete.id}`);
+        
+        if (response.data.success) {
+          // 显示成功消息
+          const successMessage = response.data.message || '文件删除成功';
+          console.log(successMessage);
+          alert(successMessage);
+          
+          // 文件删除成功，重新获取文件列表
+          this.fetchKnowledgeBaseDetails();
+          this.fileToDelete = null;
+        } else {
+          console.error('删除文件失败:', response.data.error);
+          alert(`删除失败: ${response.data.error}`);
+        }
+      } catch (error) {
+        console.error('删除文件出错:', error);
+        alert('删除出错，请稍后再试');
+      } finally {
+        this.showConfirmDialog = false;
+      }
+    },
+    
     // 执行确认的操作
     executeConfirmedAction() {
       if (typeof this.confirmedAction === 'function') {
