@@ -120,7 +120,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watchEffect } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useCourseStore } from '../store/courseStore'
@@ -209,6 +209,7 @@ export default {
     // 获取课程评价
     const fetchReviews = async () => {
       loadingReviews.value = true
+      reviews.value = []
 
       try {
         await reviewStore.fetchReview(courseId)

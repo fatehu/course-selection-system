@@ -1,4 +1,4 @@
-CREATE TABLE announcements (
+`course_selection_system`CREATE TABLE announcements (
   id INT PRIMARY KEY AUTO_INCREMENT,
   title VARCHAR(255) NOT NULL,
   content TEXT NOT NULL,
@@ -12,6 +12,8 @@ CREATE TABLE announcements (
 ALTER TABLE reviews CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 SELECT * FROM announcements WHERE id = 1;
+
+ALTER TABLE announcements ADD COLUMN is_locked TINYINT(1) DEFAULT 0;
 
 -- 插入系统公告示例数据
 `course_selection_system`

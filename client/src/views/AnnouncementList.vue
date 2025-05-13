@@ -288,7 +288,9 @@ export default {
 
     // 路由跳转
     const createAnnouncement = () => router.push('/announcement/create')
-    const editAnnouncement = (id) => router.push(`/announcement/${id}/edit`)
+    const editAnnouncement = (id) => {
+      router.push(`/announcement/${id}/edit`)
+    }
     const viewDetail = (id) => router.push(`/announcement/${id}`)
 
     // 分页处理

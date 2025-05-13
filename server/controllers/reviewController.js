@@ -11,10 +11,6 @@ exports.getReviewsByCourse = async (req, res) => {
 
     console.log(reviews)
 
-    if (reviews.length === 0) {
-      return res.status(404).json({ success: false, message: '课程评价不存在' })
-    }
-
     res.status(200).json({
       success: true,
       count: reviews.length,

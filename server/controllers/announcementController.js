@@ -99,7 +99,7 @@ exports.updateAnnouncement = async (req, res) => {
         success: false,
         message: '没有权限执行此操作',
       })
-    }
+    } 
 
     const success = await Announcement.update(announcementId, req.body)
 
