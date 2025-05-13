@@ -25,7 +25,14 @@ const app = express()
 // 中间件
 app.use(cors())
 app.use(express.json())
-app.use(compression())
+app.use((req, res, next) => {
+  if (req.path.includes('/advisor/ask-stream')) {
+    // 流式响应路径跳过压缩
+    next();
+  } else {
+    compression()(req, res, next);
+  }
+});
 
 // 日志中间件
 app.use((req, res, next) => {
