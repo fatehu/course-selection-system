@@ -60,20 +60,29 @@
         </div>
       </div>
       
-      <!-- 知识库区域 -->
+      <!-- 知识库区域 - 修改为支持选择知识库 -->
       <div class="knowledge-section">
         <div class="section-title">
           <i class="fas fa-book"></i> 知识库
-          <button class="add-knowledge-button" title="创建知识库">
-            <i class="fas fa-plus-circle"></i>
+          <button class="add-knowledge-button" title="管理知识库" @click="goToKnowledgeBaseManager">
+            <i class="fas fa-cog"></i>
           </button>
         </div>
         <div class="knowledge-list">
-          <div class="knowledge-item">
-            <i class="fas fa-graduation-cap"></i> 学校课程信息
+          <div class="knowledge-item" 
+               :class="{ active: !activeKnowledgeBaseId }" 
+               @click="setActiveKnowledgeBase(null)">
+            <i class="fas fa-globe"></i> 默认知识
           </div>
-          <div class="knowledge-item">
-            <i class="fas fa-clipboard-list"></i> 选课规则
+          <div v-for="kb in knowledgeBases" 
+               :key="kb.id" 
+               class="knowledge-item"
+               :class="{ active: activeKnowledgeBaseId === kb.id }"
+               @click="setActiveKnowledgeBase(kb.id)">
+            <i class="fas fa-book"></i> {{ kb.name }}
+          </div>
+          <div v-if="knowledgeBases.length === 0" class="empty-knowledge">
+            <p>暂无自定义知识库</p>
           </div>
         </div>
       </div>
@@ -157,6 +166,12 @@
         >
           <i class="fas fa-arrow-down"></i>
         </div>
+      </div>
+      
+      <!-- 显示当前选中的知识库提示信息 -->
+      <div v-if="activeKnowledgeBaseId" class="knowledge-base-info">
+        <i class="fas fa-info-circle"></i>
+        <span>使用知识库：{{ getKnowledgeBaseName(activeKnowledgeBaseId) }}</span>
       </div>
       
       <!-- 输入区域 -->
@@ -243,8 +258,8 @@ export default {
       currentChatId: null, // 当前会话ID
       chatHistory: [], // 对话历史
       hasLoadedHistory: false, // 是否已加载历史会话
-      knowledgeBases: [], // 知识库列表
-      activeKnowledgeBaseId: null, // 当前使用的知识库ID
+      knowledgeBases: [], // 新增：知识库列表
+      activeKnowledgeBaseId: null, // 新增：当前使用的知识库ID
       activeMenu: null, // 当前激活的菜单ID
       showModal: false, // 是否显示模态框
       modalType: '', // 模态框类型: 'rename' 或 'delete'
@@ -303,6 +318,9 @@ export default {
     
     // 加载对话历史
     await this.loadChatHistory();
+    
+    // 新增：加载知识库列表
+    await this.fetchKnowledgeBases();
 
     // 检查URL中是否有sessionId参数
     const urlParams = new URLSearchParams(window.location.search);
@@ -415,7 +433,7 @@ export default {
         this.scrollToBottom();
       });
       
-      // 尝试使用流式接口，传递当前会话ID
+      // 尝试使用流式接口，传递当前会话ID和知识库ID
       this.tryStreamingRequest(question, this.currentChatId)
         .catch((error) => {
           // 如果流式接口失败，使用原来的非流式接口
@@ -467,15 +485,16 @@ export default {
 
       // 使用 axios 配置的 baseURL
       const fullUrl = `${this.baseURL}${streamUrl}`;
-      console.log('发送流式请求:', fullUrl, { question, sessionId });
+      console.log('发送流式请求:', fullUrl, { question, sessionId, knowledgeBaseId: this.activeKnowledgeBaseId });
 
+      // 修改：传递知识库ID
       const response = await fetch(fullUrl, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({ 
           question,
           sessionId,
-          knowledgeBaseId: this.activeKnowledgeBaseId
+          knowledgeBaseId: this.activeKnowledgeBaseId // 添加知识库ID
         }),
       });
       
@@ -574,6 +593,40 @@ export default {
       }
     },
 
+    // 新增：获取知识库列表方法
+    async fetchKnowledgeBases() {
+      try {
+        console.log('获取知识库列表...');
+        const response = await axios.get('/knowledge-base');
+        
+        if (response.data && response.data.success) {
+          this.knowledgeBases = response.data.knowledgeBases || [];
+          console.log('获取知识库成功:', this.knowledgeBases);
+        } else {
+          console.error('获取知识库失败:', response.data?.error);
+        }
+      } catch (error) {
+        console.error('获取知识库失败:', error);
+      }
+    },
+    
+    // 新增：设置当前使用的知识库
+    setActiveKnowledgeBase(knowledgeBaseId) {
+      this.activeKnowledgeBaseId = knowledgeBaseId;
+      console.log('切换到知识库:', knowledgeBaseId);
+    },
+    
+    // 新增：获取知识库名称
+    getKnowledgeBaseName(id) {
+      const kb = this.knowledgeBases.find(kb => kb.id == id);
+      return kb ? kb.name : '';
+    },
+    
+    // 新增：跳转到知识库管理页面
+    goToKnowledgeBaseManager() {
+      this.$router.push('/knowledge-base');
+    },
+
     // 自动生成标题
     async generateTitle(sessionId) {
       try {
@@ -645,11 +698,12 @@ export default {
         this.scrollToBottom();
       });
       
-      console.log('发送常规请求:', { question, sessionId });
+      console.log('发送常规请求:', { question, sessionId, knowledgeBaseId: this.activeKnowledgeBaseId });
+      // 修改：传递知识库ID
       const response = await axios.post('/advisor/ask', { 
         question,
         sessionId,
-        knowledgeBaseId: this.activeKnowledgeBaseId
+        knowledgeBaseId: this.activeKnowledgeBaseId // 添加知识库ID
       });
       
       console.log('收到常规响应:', response.data);
@@ -810,36 +864,29 @@ export default {
       }
     },
     
-    // 设置使用的知识库
-    setActiveKnowledgeBase(knowledgeBaseId) {
-      this.activeKnowledgeBaseId = knowledgeBaseId;
-      // 可以在这里添加切换知识库的提示
-      console.log('切换到知识库:', knowledgeBaseId);
+    // 显示操作菜单
+    showActionMenu(chat, event) {
+      // 阻止事件冒泡
+      if (event) event.stopPropagation();
+      
+      // 如果当前有打开的菜单且点击的是同一个项目，则关闭
+      if (this.activeMenu === chat.id) {
+        this.activeMenu = null;
+      } else {
+        this.activeMenu = chat.id;
+      }
+      
+      // 点击其他区域关闭菜单
+      const closeMenu = (e) => {
+        this.activeMenu = null;
+        document.removeEventListener('click', closeMenu);
+      };
+      
+      setTimeout(() => {
+        document.addEventListener('click', closeMenu);
+      }, 0);
     },
-
-  // 显示操作菜单
-  showActionMenu(chat, event) {
-    // 阻止事件冒泡
-    if (event) event.stopPropagation();
     
-    // 如果当前有打开的菜单且点击的是同一个项目，则关闭
-    if (this.activeMenu === chat.id) {
-      this.activeMenu = null;
-    } else {
-      this.activeMenu = chat.id;
-    }
-    
-    // 点击其他区域关闭菜单
-    const closeMenu = (e) => {
-      this.activeMenu = null;
-      document.removeEventListener('click', closeMenu);
-    };
-    
-    setTimeout(() => {
-      document.addEventListener('click', closeMenu);
-    }, 0);
-  },
-  
     // 显示重命名确认框
     showRenameConfirm(chat) {
       if (!chat) return;
@@ -1138,8 +1185,9 @@ export default {
   font-size: 0.9rem;
 }
 
+/* 知识库项目样式 - 新增样式 */
 .knowledge-item {
-  flex-direction: row;
+  display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem;
@@ -1153,8 +1201,20 @@ export default {
   background-color: #e8e8e8;
 }
 
+.knowledge-item.active {
+  background-color: #e3f2fd;
+  border-left: 3px solid #2196F3;
+}
+
 .knowledge-item i {
   color: #5E35B1;
+}
+
+.empty-knowledge {
+  text-align: center;
+  padding: 10px;
+  color: #666;
+  font-size: 0.85rem;
 }
 
 .add-knowledge-button {
@@ -1168,6 +1228,22 @@ export default {
 
 .add-knowledge-button:hover {
   color: #4527A0;
+}
+
+/* 知识库信息提示 - 新增样式 */
+.knowledge-base-info {
+  padding: 8px 12px;
+  background-color: #e8f5e9;
+  color: #4caf50;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid #c8e6c9;
+}
+
+.knowledge-base-info i {
+  font-size: 1rem;
 }
 
 .sidebar-footer {

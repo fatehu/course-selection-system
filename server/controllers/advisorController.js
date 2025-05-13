@@ -22,7 +22,7 @@ function withTimeout(promise, timeoutMs = 30000) {
 // AI辅导员问答API
 const askQuestion = async (req, res) => {
   try {
-    const { question, sessionId } = req.body;
+    const { question, sessionId, knowledgeBaseId } = req.body;
     const userId = req.user.id;
     
     if (!question || typeof question !== 'string') {
@@ -36,8 +36,8 @@ const askQuestion = async (req, res) => {
     
     // 使用超时包装器处理长时间运行的请求
     const result = await withTimeout(
-      advisorService.answerQuestion(question, userId, sessionId),
-      60000 // 60秒超时
+      advisorService.answerQuestion(question, userId, sessionId, knowledgeBaseId),
+      60000
     );
     
     res.json({ 
@@ -68,7 +68,7 @@ const askQuestion = async (req, res) => {
 // AI辅导员问答API - 流式输出版本
 const askQuestionStream = async (req, res) => {
   try {
-    const { question, sessionId } = req.body;
+    const { question, sessionId, knowledgeBaseId } = req.body;
     const userId = req.user.id;
     
     if (!question || typeof question !== 'string') {
@@ -92,7 +92,7 @@ const askQuestionStream = async (req, res) => {
     
     try {
       // 调用服务获取流式回答
-      const answerStream = advisorService.answerQuestionStream(question, userId, sessionId);
+      const answerStream = advisorService.answerQuestionStream(question, userId, sessionId, knowledgeBaseId);
       
       let isFirstChunk = true;
       let currentSessionId = null;

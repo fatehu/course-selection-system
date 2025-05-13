@@ -78,12 +78,12 @@ class AdvisorService {
   }
   
   // 回答问题
-  async answerQuestion(question, userId, sessionId = null) {
+  async answerQuestion(question, userId, sessionId = null, knowledgeBaseId = null) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId}`);
+    console.log(`收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId} 知识库ID: ${knowledgeBaseId}`);
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
@@ -105,7 +105,17 @@ class AdvisorService {
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
       
       // 搜索相关文档
-      const searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
+      let searchResults = [];
+      
+      if (knowledgeBaseId) {
+        // 使用指定知识库搜索
+        const knowledgeBaseService = require('../knowledgeBaseService');
+        searchResults = await knowledgeBaseService.searchKnowledgeBase(knowledgeBaseId, question, 5);
+      } else {
+        // 使用默认向量存储搜索
+        searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
+      }
+      
       console.log(`找到${searchResults.length}个相关文档片段`);
       
       // 生成回答，传递对话历史
@@ -132,12 +142,12 @@ class AdvisorService {
   }
 
   // 流式回答问题
-  async *answerQuestionStream(question, userId, sessionId = null) {
+  async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId}`);
+    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId} 知识库ID: ${knowledgeBaseId}`);
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
@@ -159,7 +169,17 @@ class AdvisorService {
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
       
       // 搜索相关文档
-      const searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
+      let searchResults = [];
+      
+      if (knowledgeBaseId) {
+        // 使用指定知识库搜索
+        const knowledgeBaseService = require('../knowledgeBaseService');
+        searchResults = await knowledgeBaseService.searchKnowledgeBase(knowledgeBaseId, question, 5);
+      } else {
+        // 使用默认向量存储搜索
+        searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
+      }
+      
       console.log(`找到${searchResults.length}个相关文档片段`);
       
       // 收集完整回答

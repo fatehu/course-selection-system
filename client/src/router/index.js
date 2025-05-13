@@ -1,5 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '../store/userStore'
+// 添加知识库管理路由
+import KnowledgeBaseManager from '@/components/KnowledgeBaseManager.vue';
+import KnowledgeBaseDetail from '@/components/KnowledgeBaseDetail.vue';
+import KnowledgeBaseTest from '@/components/KnowledgeBaseTest.vue';
 
 const routes = [
   {
@@ -143,6 +147,26 @@ const routes = [
     name: 'Advisor',
     component: () => import('@/views/AdvisorPage.vue'),
     meta: { requiresAuth: true },
+  },
+    {
+    path: '/knowledge-base',
+    name: 'KnowledgeBaseManager',
+    component: KnowledgeBaseManager,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/knowledge-base/:id',
+    name: 'KnowledgeBaseDetail',
+    component: KnowledgeBaseDetail,
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/knowledge-base/:id/test',
+    name: 'KnowledgeBaseTest',
+    component: KnowledgeBaseTest,
+    props: true,
+    meta: { requiresAuth: true }
   },
   {
     path: '/:pathMatch(.*)*',

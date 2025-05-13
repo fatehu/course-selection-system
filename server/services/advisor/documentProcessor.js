@@ -1,6 +1,8 @@
 const fs = require('fs-extra');
 const path = require('path');
 const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
+const csv = require('csv-parser');
 const crypto = require('crypto');
 
 class DocumentProcessor {
@@ -21,6 +23,34 @@ class DocumentProcessor {
     return crypto.createHash('md5').update(hashInput).digest('hex');
   }
   
+  // 根据文件类型提取文本
+  async extractTextFromFile(filePath) {
+    const fileExt = path.extname(filePath).toLowerCase();
+    console.log(`处理文件: ${filePath}, 扩展名: ${fileExt}`);
+    
+    try {
+      switch (fileExt) {
+        case '.pdf':
+          return await this.extractTextFromPDF(filePath);
+        case '.txt':
+          return await this.extractTextFromTXT(filePath);
+        case '.docx':
+        case '.doc':
+          return await this.extractTextFromDOCX(filePath);
+        case '.csv':
+          return await this.extractTextFromCSV(filePath);
+        case '.md':
+        case '.markdown':
+          return await this.extractTextFromTXT(filePath); // Markdown可以作为纯文本处理
+        default:
+          throw new Error(`不支持的文件类型: ${fileExt}`);
+      }
+    } catch (error) {
+      console.error(`提取文本失败: ${error.message}`);
+      throw error;
+    }
+  }
+  
   // 从PDF提取文本
   async extractTextFromPDF(filePath) {
     console.log(`处理PDF文件: ${filePath}`);
@@ -29,15 +59,74 @@ class DocumentProcessor {
     return result.text;
   }
   
-  // 优化的中文分块策略
+  // 从TXT提取文本
+  async extractTextFromTXT(filePath) {
+    console.log(`处理TXT文件: ${filePath}`);
+    const text = fs.readFileSync(filePath, 'utf8');
+    return text;
+  }
+  
+  // 从DOCX提取文本
+  async extractTextFromDOCX(filePath) {
+    console.log(`处理DOCX文件: ${filePath}`);
+    const result = await mammoth.extractRawText({
+      path: filePath
+    });
+    return result.value;
+  }
+  
+  // 从CSV提取文本
+  async extractTextFromCSV(filePath) {
+    console.log(`处理CSV文件: ${filePath}`);
+    return new Promise((resolve, reject) => {
+      const results = [];
+      fs.createReadStream(filePath)
+        .pipe(csv())
+        .on('data', (data) => results.push(Object.values(data).join(' ')))
+        .on('end', () => {
+          resolve(results.join('\n'));
+        })
+        .on('error', (error) => {
+          reject(error);
+        });
+    });
+  }
+  
+  // 检测文本主要语言
+  detectLanguage(text) {
+    // 简单语言检测：中文字符比例
+    const chinesePattern = /[\u4e00-\u9fa5]/g;
+    const chineseChars = text.match(chinesePattern) || [];
+    const chineseRatio = chineseChars.length / text.length;
+    
+    // 如果中文字符占比超过15%，认为是中文文档
+    return chineseRatio > 0.15 ? 'chinese' : 'english';
+  }
+  
+  // 改进的文本分块方法，支持中英文
   splitTextIntoChunks(text) {
     console.log("分块文本...");
     
-    // 首先尝试按章节分割
-    let sections = text.split(/第[一二三四五六七八九十]+[章节]|[一二三四五六七八九十]+[、\.\s]/);
+    // 检测文本语言
+    const language = this.detectLanguage(text);
+    console.log(`检测到文本语言: ${language}`);
+    
+    let sections = [];
+    
+    // 根据语言选择分隔策略
+    if (language === 'chinese') {
+      // 中文分块逻辑：按章节分割
+      console.log("使用中文分块策略");
+      sections = text.split(/第[一二三四五六七八九十百千万零]{1,5}[章节篇讲单元]|[一二三四五六七八九十]{1,3}[、\.\s]/);
+    } else {
+      // 英文分块逻辑：按章节和部分分割
+      console.log("使用英文分块策略");
+      sections = text.split(/Chapter\s+\d+|Section\s+\d+(\.\d+)*|Part\s+\d+|Appendix\s+[A-Z]/i);
+    }
     
     // 如果没有明显的章节，尝试按段落分割
     if (sections.length <= 1) {
+      console.log("未找到明显章节，按段落分割");
       sections = [text];
     }
     
@@ -89,8 +178,8 @@ class DocumentProcessor {
     return chunks.filter(chunk => chunk.length >= 100); // 过滤太短的块
   }
   
-  // 处理PDF文件并返回分块结果
-  async processPDF(filePath) {
+  // 处理文件并返回分块结果
+  async processFile(filePath) {
     const docId = this.generateDocumentId(filePath);
     const cacheFile = path.join(this.cacheDir, `${docId}.json`);
     
@@ -101,33 +190,43 @@ class DocumentProcessor {
     }
     
     // 提取并处理文本
-    const text = await this.extractTextFromPDF(filePath);
-    const chunks = this.splitTextIntoChunks(text);
-    
-    // 为每个块创建元数据
-    const processedChunks = chunks.map((content, index) => ({
-      id: `${docId}-${index}`,
-      content,
-      metadata: {
-        source: path.basename(filePath),
-        chunk: index + 1,
-        totalChunks: chunks.length
-      }
-    }));
-    
-    // 缓存处理结果
-    fs.writeFileSync(cacheFile, JSON.stringify(processedChunks));
-    
-    return processedChunks;
+    try {
+      const text = await this.extractTextFromFile(filePath);
+      const chunks = this.splitTextIntoChunks(text);
+      
+      // 为每个块创建元数据
+      const processedChunks = chunks.map((content, index) => ({
+        id: `${docId}-${index}`,
+        content,
+        metadata: {
+          source: path.basename(filePath),
+          chunk: index + 1,
+          totalChunks: chunks.length
+        }
+      }));
+      
+      // 缓存处理结果
+      fs.writeFileSync(cacheFile, JSON.stringify(processedChunks));
+      
+      return processedChunks;
+    } catch (error) {
+      console.error(`处理文件失败: ${filePath}`, error);
+      throw error;
+    }
   }
   
-  // 批量处理多个PDF文件
-  async processMultiplePDFs(filePaths) {
+  // 批量处理多个文件
+  async processMultipleFiles(filePaths) {
     const allChunks = [];
     
     for (const filePath of filePaths) {
-      const chunks = await this.processPDF(filePath);
-      allChunks.push(...chunks);
+      try {
+        const chunks = await this.processFile(filePath);
+        allChunks.push(...chunks);
+      } catch (error) {
+        console.error(`处理文件失败: ${filePath}`, error);
+        // 继续处理其他文件
+      }
     }
     
     return allChunks;

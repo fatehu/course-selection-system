@@ -16,6 +16,7 @@ const announcementRoutes = require('./routes/announcementRoutes')
 // 添加AI辅导员路由
 const advisorRoutes = require('./routes/advisor')
 const reviewRoutes = require('./routes/reviewRoutes')
+const knowledgeBaseRouter = require('./routes/knowledgeBase');
 
 // 创建Express应用
 const app = express()
@@ -46,6 +47,7 @@ app.use('/api/batch', batchRoutes)
 app.use('/api/announcements', announcementRoutes)
 app.use('/api/advisor', advisorRoutes)
 app.use('/api/reviews', reviewRoutes)
+app.use('/api/knowledge-base', knowledgeBaseRouter);
 
 // 根路由
 app.get('/', (req, res) => {

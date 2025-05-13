@@ -48,12 +48,18 @@
               <span>公告发布</span>
             </el-menu-item>
 
+            <!-- 新增知识库管理菜单项 -->
+            <el-menu-item index="/knowledge-base">
+              <el-icon><Collection /></el-icon>
+              <span>知识库管理</span>
+            </el-menu-item>
+
             <el-menu-item index="/profile">
               <el-icon><user /></el-icon>
               <span>个人信息</span>
             </el-menu-item>
 
-              <!-- 新增AI辅导员菜单项 -->
+            <!-- 新增AI辅导员菜单项 -->
             <el-menu-item index="/advisor">
               <el-icon><ChatDotRound /></el-icon>
               <span>AI辅导员</span>
@@ -161,6 +167,11 @@ export default {
     const isAdvisorPage = computed(() => {
       return route.path === '/advisor';
     });
+    
+    // 新增：判断是否是知识库页面
+    const isKnowledgeBasePage = computed(() => {
+      return route.path.startsWith('/knowledge-base');
+    });
 
     // 判断是否是登录页
     const isLoginPage = computed(() => {
@@ -211,6 +222,7 @@ export default {
       toggleSidebar,
       handleCommand,
       isAdvisorPage,
+      isKnowledgeBasePage,
       advisorCurrentChatTitle,
       updateAdvisorChatTitle
     }

@@ -100,6 +100,9 @@ export default {
     const messagesContainer = ref(null);
     const inputField = ref(null);
     const baseURL = ref('');
+    
+    // 新增：默认知识库ID（使用null表示使用系统默认知识库）
+    const defaultKnowledgeBaseId = ref(null);
 
     // 切换聊天窗口
     const toggleExpanded = () => {
@@ -253,12 +256,14 @@ export default {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
+      // 修改：传递默认知识库ID
       const response = await fetch(`${baseURL.value}/advisor/ask-stream`, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({ 
           question,
-          sessionId
+          sessionId,
+          knowledgeBaseId: defaultKnowledgeBaseId.value // 使用默认知识库ID
         }),
       });
       
@@ -375,9 +380,11 @@ export default {
       });
       
       console.log('发送常规请求:', { question, sessionId });
+      // 修改：传递默认知识库ID
       const response = await axios.post('/api/advisor/ask', { 
         question,
-        sessionId
+        sessionId,
+        knowledgeBaseId: defaultKnowledgeBaseId.value // 使用默认知识库ID
       });
       
       console.log('收到常规响应:', response.data);
