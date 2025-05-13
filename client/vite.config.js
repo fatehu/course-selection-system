@@ -48,5 +48,14 @@ export default defineConfig({
     //     changeOrigin: true,
     //   },
     // },
+    host: '0.0.0.0',
+    proxy: {
+      '/base.css': {
+        target: 'http://localhost:5173/src/assets/base.css',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/base.css/, ''),
+      },
+    },
+    allowedHosts: 'all', // 允许所有主机访问
   },
 })
