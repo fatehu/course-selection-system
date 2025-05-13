@@ -1,6 +1,7 @@
 const express = require('express')
 const cors = require('cors')
 const { testConnection } = require('./config/db')
+const compression = require('compression') // 引入压缩中间件
 require('dotenv').config()
 
 // 导入路由
@@ -16,7 +17,7 @@ const announcementRoutes = require('./routes/announcementRoutes')
 // 添加AI辅导员路由
 const advisorRoutes = require('./routes/advisor')
 const reviewRoutes = require('./routes/reviewRoutes')
-const knowledgeBaseRouter = require('./routes/knowledgeBase');
+const knowledgeBaseRouter = require('./routes/knowledgeBase')
 
 // 创建Express应用
 const app = express()
@@ -24,6 +25,7 @@ const app = express()
 // 中间件
 app.use(cors())
 app.use(express.json())
+app.use(compression())
 
 // 日志中间件
 app.use((req, res, next) => {
@@ -47,7 +49,7 @@ app.use('/api/batch', batchRoutes)
 app.use('/api/announcements', announcementRoutes)
 app.use('/api/advisor', advisorRoutes)
 app.use('/api/reviews', reviewRoutes)
-app.use('/api/knowledge-base', knowledgeBaseRouter);
+app.use('/api/knowledge-base', knowledgeBaseRouter)
 
 // 根路由
 app.get('/', (req, res) => {
