@@ -75,7 +75,140 @@ class DeepSeekService {
     }
   };
 
-  // 流式生成回答
+  // 流式生成回答（带思维链）
+  async *generateAnswerStreamWithReasoning(question, relevantDocs, conversationHistory = [], customSystemPrompt = null) {
+    try {
+      // 提取相关文档的内容
+      const context = relevantDocs
+        .map(doc => doc.document.content || doc.document)
+        .join("\n\n---\n\n");
+      
+      console.log(`向DeepSeek发送流式请求(思维链模式)，问题长度: ${question.length}, 上下文长度: ${context.length}, 对话历史: ${conversationHistory.length}条`);
+      
+      // 使用自定义系统提示或默认提示
+      const systemPrompt = customSystemPrompt || this.systemPrompt;
+      
+      // 构建消息数组，从系统提示开始
+      const messages = [
+        { role: "system", content: systemPrompt }
+      ];
+      
+      // 更可靠的历史处理：只使用完整的用户-助手对话对
+      if (conversationHistory && conversationHistory.length >= 2) {
+        // 收集完整的用户-助手对话对
+        let userAssistantPairs = [];
+        
+        for (let i = 0; i < conversationHistory.length - 1; i++) {
+          if (conversationHistory[i].role === 'user' && 
+              conversationHistory[i+1].role === 'assistant') {
+            userAssistantPairs.push({
+              user: conversationHistory[i],
+              assistant: conversationHistory[i+1]
+            });
+            i++; // 跳过已处理的助手消息
+          }
+        }
+        
+        // 只使用最近的对话对（最多2对，保持上下文理解同时避免过长）
+        const usePairCount = Math.min(2, userAssistantPairs.length);
+        const recentPairs = userAssistantPairs.slice(-usePairCount);
+        
+        // 添加完整的对话对到消息中
+        for (const pair of recentPairs) {
+          messages.push({ role: 'user', content: pair.user.content });
+          messages.push({ role: 'assistant', content: pair.assistant.content });
+        }
+      }
+      
+      // 添加当前问题和参考文档 - 确保与最后一条消息角色不同
+      if (messages.length > 1 && messages[messages.length - 1].role === 'user') {
+        // 如果最后一条消息是用户的，添加一个简短的助手回复
+        messages.push({ 
+          role: 'assistant', 
+          content: '我了解了。请继续。' 
+        });
+      }
+      
+      // 现在添加当前问题
+      messages.push({
+        role: "user", 
+        content: `基于以下参考文档回答问题:\n\n${context}\n\n学生问题: ${question}`
+      });
+
+      // 打印处理后的消息序列用于调试
+      console.log("处理后的消息序列:", messages.map(m => m.role).join(', '));
+      
+      // 最终检查：确保没有连续的相同角色消息
+      for (let i = 1; i < messages.length - 1; i++) {
+        if (messages[i].role === messages[i + 1].role) {
+          console.log(`检测到连续消息问题: ${i}和${i+1}都是${messages[i].role}`);
+          // 移除第二条相同角色的消息
+          messages.splice(i + 1, 1);
+          i--; // 调整索引继续检查
+        }
+      }
+      
+      // 再次打印消息序列以验证
+      console.log("最终消息序列:", messages.map(m => m.role).join(', '));
+      
+      try {
+        const stream = await this.client.chat.completions.create({
+          model: "deepseek-reasoner", // 使用带思维链的模型
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 1000,
+          stream: true,
+        });
+        
+        console.log("DeepSeek开始流式响应(思维链模式)");
+        
+        for await (const chunk of stream) {
+          // 处理带 delta 结构的流式数据块
+          const content = chunk.choices[0]?.delta?.content;
+          const reasoning = chunk.choices[0]?.delta?.reasoning_content;
+          
+          // 处理非流式或不同响应结构
+          if (!content && !reasoning && chunk.choices[0]?.message) {
+            const message = chunk.choices[0].message;
+            
+            if (message.content) {
+              yield { type: 'answer', content: message.content };
+            }
+            
+            if (message.reasoning_content) {
+              yield { type: 'reasoning', content: message.reasoning_content };
+            }
+          } else {
+            // 原始流处理
+            if (content) {
+              yield { type: 'answer', content };
+            }
+            
+            if (reasoning) {
+              console.log(`[DeepSeek思维链] 收到思维链内容: ${reasoning.substring(0, 50)}...`);
+              yield { type: 'reasoning', content: reasoning };
+            }
+          }
+        }
+        
+        console.log("DeepSeek流式响应结束(思维链模式)");
+      } catch (error) {
+        console.error("DeepSeek 请求失败:", error.message);
+        yield { 
+          type: 'error',
+          content: "深度思考模式暂时不可用，已切换到标准模式。" 
+        };
+      }
+    } catch (error) {
+      console.error("DeepSeek API调用失败(思维链模式):", error.message);
+      yield { 
+        type: 'error',
+        content: "抱歉，深度思考模式暂时不可用，已切换到标准回答模式。" 
+      };
+    }
+  };
+
+  // 保留原始的流式生成回答方法
   async *generateAnswerStream(question, relevantDocs, conversationHistory = [], customSystemPrompt = null) {
     try {
       // 提取相关文档的内容
@@ -112,7 +245,7 @@ class DeepSeekService {
       });
       
       const stream = await this.client.chat.completions.create({
-        model: "deepseek-chat",
+        model: "deepseek-chat", // 使用标准聊天模型
         messages: messages,
         temperature: 0.7,
         max_tokens: 1000,

@@ -17,18 +17,18 @@ class WebSearchService {
         name: 'Serper',
         enabled: process.env.SERPER_API_KEY ? true : false,
         apiKey: process.env.SERPER_API_KEY,
-        endpoint: 'https://api.serper.dev/search',
+        endpoint: 'https://google.serper.dev/search',
         parseResults: this.parseSerperResults,
-        description: '免费层每月1000次搜索'
+        description: '免费层2500次搜索'
       },
-      brave: {
-        name: 'Brave Search',
-        enabled: process.env.BRAVE_API_KEY ? true : false,
-        apiKey: process.env.BRAVE_API_KEY,
-        endpoint: 'https://api.search.brave.com/res/v1/web/search',
-        parseResults: this.parseBraveResults,
-        description: '免费层每月1000次搜索'
-      }
+      // brave: {
+      //   name: 'Brave Search',
+      //   enabled: process.env.BRAVE_API_KEY ? true : false,
+      //   apiKey: process.env.BRAVE_API_KEY,
+      //   endpoint: 'https://api.search.brave.com/res/v1/web/search',
+      //   parseResults: this.parseBraveResults,
+      //   description: '免费层每月1000次搜索'
+      // }
     };
     
     // 默认激活的搜索引擎 - 自动选择第一个可用的
@@ -154,7 +154,10 @@ class WebSearchService {
         case 'serper':
           response = await axios.post(engine.endpoint, {
             q: query,
-            num: limit
+            location: 'China', 
+            num: limit,         
+            hl: 'zh-cn',
+            tbs: 'qdr:d' 
           }, {
             headers: {
               'X-API-KEY': engine.apiKey,

@@ -194,12 +194,12 @@ class AdvisorService {
   }
 
   // 流式回答问题
-  async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false) {
+  async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false, useDeepThinking = false) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 知识库ID: ${knowledgeBaseId} 使用网络搜索: ${useWebSearch || false}`);
+    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 知识库ID: ${knowledgeBaseId} 使用网络搜索: ${useWebSearch || false} 深度思考: ${useDeepThinking || false}`);
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
@@ -287,19 +287,44 @@ class AdvisorService {
       
       // 收集完整回答
       let fullAnswer = '';
+      let reasoning = '';
       
-      // 使用修改后的参数生成流式回答
-      for await (const chunk of this.deepseekService.generateAnswerStream(
-        question, 
-        combinedResults, 
-        conversationHistory,
-        customSystemPrompt // 如果有网络搜索结果，使用自定义提示词；否则使用默认提示词
-      )) {
-        fullAnswer += chunk;
-        yield { sessionId, chunk };
+      // 根据是否使用深度思考模式选择不同的方法
+      if (useDeepThinking) {
+        // 使用思维链模式生成回答
+        for await (const chunk of this.deepseekService.generateAnswerStreamWithReasoning(
+          question, 
+          combinedResults, 
+          conversationHistory,
+          customSystemPrompt
+        )) {
+          if (chunk.type === 'answer') {
+            fullAnswer += chunk.content;
+            yield { sessionId, chunk: chunk.content, type: 'answer' };
+          } 
+          else if (chunk.type === 'reasoning') {
+            reasoning += chunk.content;
+            console.log(`[AI辅导员] 收到思维链内容，当前长度: ${reasoning.length}`);
+            yield { sessionId, chunk: chunk.content, type: 'reasoning' };
+          }
+          else if (chunk.type === 'error') {
+            yield { sessionId, chunk: chunk.content, type: 'error' };
+          }
+        }
+      } else {
+        // 使用普通模式生成回答
+        for await (const chunk of this.deepseekService.generateAnswerStream(
+          question, 
+          combinedResults, 
+          conversationHistory,
+          customSystemPrompt
+        )) {
+          fullAnswer += chunk;
+          yield { sessionId, chunk };
+        }
       }
       
-      // 添加完整AI回答到会话
+      // 添加完整AI回答到会话（不包含思维链）
       await conversationService.addMessage(sessionId, {
         role: 'assistant',
         content: fullAnswer
