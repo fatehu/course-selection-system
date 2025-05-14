@@ -78,12 +78,12 @@ class AdvisorService {
   }
   
   // 回答问题
-  async answerQuestion(question, userId, sessionId = null, knowledgeBaseId = null) {
+  async answerQuestion(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId} 知识库ID: ${knowledgeBaseId}`);
+    console.log(`收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 知识库ID: ${knowledgeBaseId} 使用网络搜索: ${useWebSearch || false}`);
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
@@ -118,11 +118,63 @@ class AdvisorService {
       
       console.log(`找到${searchResults.length}个相关文档片段`);
       
-      // 生成回答，传递对话历史
+      // 处理网络搜索
+      let webResults = [];
+      let customSystemPrompt = null;
+      
+      if (useWebSearch) {
+        console.log("执行网络搜索...");
+        try {
+          // 导入网络搜索服务
+          const webSearchService = require('../webSearchService');
+          const webSearchResults = await webSearchService.search(question, 5);
+          
+          if (webSearchResults && webSearchResults.success) {
+            webResults = webSearchResults.results;
+            console.log(`获取到${webResults.length}个网络搜索结果`);
+            
+            // 构建包含网络搜索结果的内容
+            const webResultsText = webResults.map(result => 
+              `标题: ${result.title}\n摘要: ${result.snippet}\n来源: ${result.url}`
+            ).join('\n\n---\n\n');
+            
+            // 不替换原有提示词，而是在其基础上添加网络搜索结果
+            customSystemPrompt = this.deepseekService.systemPrompt + 
+              `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            
+            console.log("已添加网络搜索结果到系统提示");
+          } else {
+            console.log("网络搜索未返回结果或结果不正确");
+          }
+        } catch (error) {
+          console.error("网络搜索出错:", error);
+        }
+      }
+      
+      // 合并文档结果，添加网络搜索结果
+      const combinedResults = [...searchResults];
+      if (webResults.length > 0) {
+        webResults.forEach((result, index) => {
+          combinedResults.push({
+            document: {
+              content: `标题: ${result.title}\n摘要: ${result.snippet}\n来源: ${result.url}`,
+              id: `web-${index}`,
+              metadata: { 
+                source: 'web-search', 
+                url: result.url 
+              }
+            },
+            similarity: 0.9 - (index * 0.05) // 给网络搜索结果一个较高的初始权重
+          });
+        });
+      }
+      
+      // 生成回答，传递对话历史和自定义系统提示
       const answer = await this.deepseekService.generateAnswer(
         question, 
-        searchResults,
-        conversationHistory
+        combinedResults,
+        conversationHistory,
+        customSystemPrompt // 如果有网络搜索结果，使用自定义提示词；否则使用默认提示词
       );
       
       // 添加AI回答到会话
@@ -133,7 +185,7 @@ class AdvisorService {
       
       return { sessionId, answer };
     } catch (error) {
-      console.error("回答问题时出错:", error);
+      console.error("回答问题出错:", error);
       return { 
         sessionId,
         answer: "抱歉，我暂时无法回答您的问题。请稍后再试。" 
@@ -142,12 +194,12 @@ class AdvisorService {
   }
 
   // 流式回答问题
-  async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null) {
+  async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId} 知识库ID: ${knowledgeBaseId}`);
+    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 知识库ID: ${knowledgeBaseId} 使用网络搜索: ${useWebSearch || false}`);
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
@@ -182,14 +234,66 @@ class AdvisorService {
       
       console.log(`找到${searchResults.length}个相关文档片段`);
       
+      // 处理网络搜索
+      let webResults = [];
+      let customSystemPrompt = null;
+      
+      if (useWebSearch) {
+        console.log("执行流式响应的网络搜索...");
+        try {
+          // 导入网络搜索服务
+          const webSearchService = require('../webSearchService');
+          const webSearchResults = await webSearchService.search(question, 5);
+          
+          if (webSearchResults && webSearchResults.success) {
+            webResults = webSearchResults.results;
+            console.log(`获取到${webResults.length}个网络搜索结果用于流式响应`);
+            
+            // 构建包含网络搜索结果的内容
+            const webResultsText = webResults.map(result => 
+              `标题: ${result.title}\n摘要: ${result.snippet}\n来源: ${result.url}`
+            ).join('\n\n---\n\n');
+            
+            // 不替换原有提示词，而是在其基础上添加网络搜索结果
+            customSystemPrompt = this.deepseekService.systemPrompt + 
+              `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            
+            console.log("已添加网络搜索结果到流式响应系统提示");
+          } else {
+            console.log("流式响应的网络搜索未返回结果或结果不正确");
+          }
+        } catch (error) {
+          console.error("流式响应的网络搜索出错:", error);
+        }
+      }
+      
+      // 合并文档结果，添加网络搜索结果
+      const combinedResults = [...searchResults];
+      if (webResults.length > 0) {
+        webResults.forEach((result, index) => {
+          combinedResults.push({
+            document: {
+              content: `标题: ${result.title}\n摘要: ${result.snippet}\n来源: ${result.url}`,
+              id: `web-${index}`,
+              metadata: { 
+                source: 'web-search', 
+                url: result.url 
+              }
+            },
+            similarity: 0.9 - (index * 0.05) // 给网络搜索结果一个较高的初始权重
+          });
+        });
+      }
+      
       // 收集完整回答
       let fullAnswer = '';
       
-      // 流式生成回答
+      // 使用修改后的参数生成流式回答
       for await (const chunk of this.deepseekService.generateAnswerStream(
         question, 
-        searchResults, 
-        conversationHistory
+        combinedResults, 
+        conversationHistory,
+        customSystemPrompt // 如果有网络搜索结果，使用自定义提示词；否则使用默认提示词
       )) {
         fullAnswer += chunk;
         yield { sessionId, chunk };
@@ -231,41 +335,40 @@ class AdvisorService {
 
   // 生成会话标题
   async generateTitle(questionText) {
-  if (!this.initialized) {
-    await this.initialize();
-  }
-  
-  try {
-    // 调用DeepSeek服务生成标题
-    const prompt = `请为以下问题生成一个简短的标题(10个字以内)，不要使用引号，仅返回标题本身：\n"${questionText}"`;
-    
-    const response = await this.deepseekService.client.chat.completions.create({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: "你是一个简洁标题生成器，只输出标题文本，不加任何其他内容。" },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 20
-    });
-    
-    let title = response.choices[0].message.content.trim();
-    
-    // 确保标题不超过30个字符
-    if (title.length > 30) {
-      title = title.substring(0, 27) + '...';
+    if (!this.initialized) {
+      await this.initialize();
     }
     
-    return title;
-  } catch (error) {
-    console.error("生成标题失败:", error);
-    // 如果生成失败，使用问题的前20个字符作为标题
-    return questionText.length > 20 ? 
-           questionText.substring(0, 17) + '...' : 
-           questionText;
+    try {
+      // 调用DeepSeek服务生成标题
+      const prompt = `请为以下问题生成一个简短的标题(10个字以内)，不要使用引号，仅返回标题本身：\n"${questionText}"`;
+      
+      const response = await this.deepseekService.client.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: "你是一个简洁标题生成器，只输出标题文本，不加任何其他内容。" },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 20
+      });
+      
+      let title = response.choices[0].message.content.trim();
+      
+      // 确保标题不超过30个字符
+      if (title.length > 30) {
+        title = title.substring(0, 27) + '...';
+      }
+      
+      return title;
+    } catch (error) {
+      console.error("生成标题失败:", error);
+      // 如果生成失败，使用问题的前20个字符作为标题
+      return questionText.length > 20 ? 
+            questionText.substring(0, 17) + '...' : 
+            questionText;
+    }
   }
 }
-}
-
 
 module.exports = new AdvisorService();

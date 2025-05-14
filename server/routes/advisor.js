@@ -14,7 +14,10 @@ const {
   getConversationMessages,
   renameConversation,
   deleteConversation,
-  generateTitle
+  generateTitle,
+  getSearchEngines,
+  setActiveEngines,
+  searchWeb
 } = advisorController;
 
 // AI辅导员问答接口
@@ -37,5 +40,14 @@ router.delete('/conversations/:sessionId', deleteConversation);
 
 // 生成会话标题
 router.post('/conversations/:sessionId/generate-title', generateTitle);
+
+// 获取可用搜索引擎
+router.get('/search/engines', getSearchEngines);
+
+// 设置活跃搜索引擎
+router.post('/search/engines', setActiveEngines);
+
+// 执行网络搜索
+router.post('/search/web', searchWeb);
 
 module.exports = router;

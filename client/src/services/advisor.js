@@ -89,5 +89,32 @@ export default {
    */
   generateConversationTitle(sessionId) {
     return axios.post(`${API_PATH}/conversations/${sessionId}/generate-title`);
+  },
+
+  /**
+   * 获取可用的搜索引擎列表
+   * @returns {Promise} - 返回搜索引擎列表
+   */
+  getSearchEngines() {
+    return axios.get(`${API_PATH}/search/engines`);
+  },
+  
+  /**
+   * 设置激活的搜索引擎
+   * @param {Array} engineIds - 搜索引擎ID数组
+   * @returns {Promise} - 返回操作结果
+   */
+  setActiveEngines(engineIds) {
+    return axios.post(`${API_PATH}/search/engines`, { engineIds });
+  },
+  
+  /**
+   * 直接执行网络搜索
+   * @param {string} query - 搜索查询
+   * @param {number} limit - 结果数量限制（可选）
+   * @returns {Promise} - 返回搜索结果
+   */
+  searchWeb(query, limit = 10) {
+    return axios.post(`${API_PATH}/search/web`, { query, limit });
   }
 };
