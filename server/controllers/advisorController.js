@@ -69,17 +69,10 @@ const askQuestion = async (req, res) => {
 // AI辅导员问答API - 流式输出版本
 const askQuestionStream = async (req, res) => {
   try {
-    const { question, sessionId, knowledgeBaseId, useWebSearch } = req.body;
+    const { question, sessionId, knowledgeBaseId, useWebSearch, useDeepThinking } = req.body;
     const userId = req.user.id;
     
-    if (!question || typeof question !== 'string') {
-      return res.status(400).json({ 
-        success: false, 
-        error: "问题不能为空且必须是字符串" 
-      });
-    }
-    
-    console.log(`${new Date().toISOString()} - 收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 使用网络搜索: ${useWebSearch || false}`);
+    console.log(`${new Date().toISOString()} - 收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 使用网络搜索: ${useWebSearch || false} 深度思考: ${useDeepThinking || false}`);
     
     // 设置SSE响应头
     res.setHeader('Content-Type', 'text/event-stream');
@@ -92,13 +85,14 @@ const askQuestionStream = async (req, res) => {
     res.write('data: {"type": "start", "message": "正在处理您的问题..."}\n\n');
     
     try {
-      // 调用服务获取流式回答，传递网络搜索参数
+      // 调用服务获取流式回答，传递深度思考参数
       const answerStream = advisorService.answerQuestionStream(
         question, 
         userId, 
         sessionId, 
         knowledgeBaseId, 
-        useWebSearch || false
+        useWebSearch || false,
+        useDeepThinking || false
       );
       
       let isFirstChunk = true;
@@ -112,9 +106,11 @@ const askQuestionStream = async (req, res) => {
         const data = {
           type: isFirstChunk ? 'first_chunk' : 'chunk',
           content: result.chunk,
-          sessionId: currentSessionId
+          sessionId: currentSessionId,
+          contentType: result.type || 'answer'  // 区分是普通回答还是思维链
         };
         
+        console.log(`[流式响应] 发送数据块 类型:${data.contentType}, 长度:${result.chunk?.length || 0}`);
         res.write(`data: ${JSON.stringify(data)}\n\n`);
         isFirstChunk = false;
       }

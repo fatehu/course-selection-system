@@ -76,6 +76,25 @@ class AdvisorService {
     
     await this.initializingPromise;
   }
+
+  // 获取用户自定义设置的方法
+  async getUserSettings(userId) {
+    const SETTINGS_DIR = path.join(process.cwd(), 'data/settings');
+    const settingsPath = path.join(SETTINGS_DIR, `advisor-settings-${userId}.json`);
+    
+    // 读取用户设置
+    if (fs.existsSync(settingsPath)) {
+      try {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        return settings;
+      } catch (error) {
+        console.error('读取用户设置失败:', error);
+      }
+    }
+    
+    // 如果读取失败或文件不存在，返回默认设置
+    return null;
+  }
   
   // 回答问题
   async answerQuestion(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false) {
@@ -84,6 +103,9 @@ class AdvisorService {
     }
     
     console.log(`收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 知识库ID: ${knowledgeBaseId} 使用网络搜索: ${useWebSearch || false}`);
+    
+    // 获取用户自定义设置
+    const userSettings = await this.getUserSettings(userId);
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
@@ -98,8 +120,9 @@ class AdvisorService {
         content: question
       });
       
-      // 获取对话历史
-      const conversationHistory = await conversationService.getRecentMessages(sessionId);
+      // 获取对话历史 - 使用用户设置的历史长度
+      const historyLength = userSettings?.historyLength || 10;
+      const conversationHistory = await conversationService.getRecentMessages(sessionId, historyLength);
       
       // 为问题生成嵌入向量
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
@@ -138,9 +161,15 @@ class AdvisorService {
               `标题: ${result.title}\n摘要: ${result.snippet}\n来源: ${result.url}`
             ).join('\n\n---\n\n');
             
-            // 不替换原有提示词，而是在其基础上添加网络搜索结果
-            customSystemPrompt = this.deepseekService.systemPrompt + 
-              `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            // 使用用户自定义系统提示词，如果存在的话
+            if (userSettings?.systemPrompt) {
+              customSystemPrompt = userSettings.systemPrompt + 
+                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            } else {
+              // 否则使用默认提示词
+              customSystemPrompt = this.deepseekService.systemPrompt + 
+                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            }
             
             console.log("已添加网络搜索结果到系统提示");
           } else {
@@ -149,6 +178,9 @@ class AdvisorService {
         } catch (error) {
           console.error("网络搜索出错:", error);
         }
+      } else if (userSettings?.systemPrompt) {
+        // 如果没有网络搜索但有自定义提示词，使用自定义提示词
+        customSystemPrompt = userSettings.systemPrompt;
       }
       
       // 合并文档结果，添加网络搜索结果
@@ -169,12 +201,19 @@ class AdvisorService {
         });
       }
       
-      // 生成回答，传递对话历史和自定义系统提示
+      // 设置AI参数
+      const aiParams = {
+        temperature: userSettings?.temperature || 0.7,
+        max_tokens: userSettings?.maxTokens || 1000
+      };
+      
+      // 生成回答，传递对话历史、自定义系统提示和参数
       const answer = await this.deepseekService.generateAnswer(
         question, 
         combinedResults,
         conversationHistory,
-        customSystemPrompt // 如果有网络搜索结果，使用自定义提示词；否则使用默认提示词
+        customSystemPrompt, // 如果有自定义提示词，使用自定义提示词；否则使用默认提示词
+        aiParams        // 传递AI参数
       );
       
       // 添加AI回答到会话
@@ -194,12 +233,15 @@ class AdvisorService {
   }
 
   // 流式回答问题
-  async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false) {
+  async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false, useDeepThinking = false) {
     if (!this.initialized) {
       await this.initialize();
     }
     
-    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 知识库ID: ${knowledgeBaseId} 使用网络搜索: ${useWebSearch || false}`);
+    console.log(`收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 知识库ID: ${knowledgeBaseId} 使用网络搜索: ${useWebSearch || false} 深度思考: ${useDeepThinking || false}`);
+    
+    // 获取用户自定义设置
+    const userSettings = await this.getUserSettings(userId);
     
     // 如果没有提供会话ID，创建新会话
     if (!sessionId) {
@@ -214,8 +256,9 @@ class AdvisorService {
         content: question
       });
       
-      // 获取对话历史
-      const conversationHistory = await conversationService.getRecentMessages(sessionId);
+      // 获取对话历史 - 使用用户设置的历史长度
+      const historyLength = userSettings?.historyLength || 10;
+      const conversationHistory = await conversationService.getRecentMessages(sessionId, historyLength);
       
       // 为问题生成嵌入向量
       const queryEmbedding = await this.embeddingService.getEmbedding(question);
@@ -239,9 +282,9 @@ class AdvisorService {
       let customSystemPrompt = null;
       
       if (useWebSearch) {
+        // 网络搜索逻辑，与非流式版本类似
         console.log("执行流式响应的网络搜索...");
         try {
-          // 导入网络搜索服务
           const webSearchService = require('../webSearchService');
           const webSearchResults = await webSearchService.search(question, 5);
           
@@ -249,14 +292,19 @@ class AdvisorService {
             webResults = webSearchResults.results;
             console.log(`获取到${webResults.length}个网络搜索结果用于流式响应`);
             
-            // 构建包含网络搜索结果的内容
             const webResultsText = webResults.map(result => 
               `标题: ${result.title}\n摘要: ${result.snippet}\n来源: ${result.url}`
             ).join('\n\n---\n\n');
             
-            // 不替换原有提示词，而是在其基础上添加网络搜索结果
-            customSystemPrompt = this.deepseekService.systemPrompt + 
-              `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            // 使用用户自定义系统提示词，如果存在的话
+            if (userSettings?.systemPrompt) {
+              customSystemPrompt = userSettings.systemPrompt + 
+                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            } else {
+              // 否则使用默认提示词
+              customSystemPrompt = this.deepseekService.systemPrompt + 
+                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+            }
             
             console.log("已添加网络搜索结果到流式响应系统提示");
           } else {
@@ -265,6 +313,9 @@ class AdvisorService {
         } catch (error) {
           console.error("流式响应的网络搜索出错:", error);
         }
+      } else if (userSettings?.systemPrompt) {
+        // 如果没有网络搜索但有自定义提示词，使用自定义提示词
+        customSystemPrompt = userSettings.systemPrompt;
       }
       
       // 合并文档结果，添加网络搜索结果
@@ -285,21 +336,54 @@ class AdvisorService {
         });
       }
       
+      // 设置AI参数
+      const aiParams = {
+        temperature: userSettings?.temperature || 0.7,
+        max_tokens: userSettings?.maxTokens || 1000
+      };
+      
       // 收集完整回答
       let fullAnswer = '';
+      let reasoning = '';
       
-      // 使用修改后的参数生成流式回答
-      for await (const chunk of this.deepseekService.generateAnswerStream(
-        question, 
-        combinedResults, 
-        conversationHistory,
-        customSystemPrompt // 如果有网络搜索结果，使用自定义提示词；否则使用默认提示词
-      )) {
-        fullAnswer += chunk;
-        yield { sessionId, chunk };
+      // 根据是否使用深度思考模式选择不同的方法
+      if (useDeepThinking) {
+        // 使用思维链模式生成回答
+        for await (const chunk of this.deepseekService.generateAnswerStreamWithReasoning(
+          question, 
+          combinedResults, 
+          conversationHistory,
+          customSystemPrompt,
+          aiParams
+        )) {
+          if (chunk.type === 'answer') {
+            fullAnswer += chunk.content;
+            yield { sessionId, chunk: chunk.content, type: 'answer' };
+          } 
+          else if (chunk.type === 'reasoning') {
+            reasoning += chunk.content;
+            console.log(`[AI辅导员] 收到思维链内容，当前长度: ${reasoning.length}`);
+            yield { sessionId, chunk: chunk.content, type: 'reasoning' };
+          }
+          else if (chunk.type === 'error') {
+            yield { sessionId, chunk: chunk.content, type: 'error' };
+          }
+        }
+      } else {
+        // 使用普通模式生成回答
+        for await (const chunk of this.deepseekService.generateAnswerStream(
+          question, 
+          combinedResults, 
+          conversationHistory,
+          customSystemPrompt,
+          aiParams
+        )) {
+          fullAnswer += chunk;
+          yield { sessionId, chunk };
+        }
       }
       
-      // 添加完整AI回答到会话
+      // 添加完整AI回答到会话（不包含思维链）
       await conversationService.addMessage(sessionId, {
         role: 'assistant',
         content: fullAnswer
@@ -367,6 +451,40 @@ class AdvisorService {
       return questionText.length > 20 ? 
             questionText.substring(0, 17) + '...' : 
             questionText;
+    }
+  }
+
+  // 生成课程评价总结
+  async generateCourseReviewSummary(courseName, reviewContents) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    try {
+      console.log(`生成"${courseName}"的评价总结，评价数量: ${reviewContents.split('\n\n').length}`);
+      
+      const prompt = `你是一名课程评价分析专家。请总结以下关于"${courseName}"课程的学生评价，提炼出课程的优点、可能的不足以及整体评价。请以分点形式组织回答，确保内容全面且客观。评价内容如下：\n\n${reviewContents}`;
+      
+      const response = await this.deepseekService.client.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          { 
+            role: "system", 
+            content: "你是一个精通教育评价分析的AI助手，擅长整理和分析学生对课程的评价，提供客观、准确的总结。" 
+          },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 100
+      });
+      
+      const summary = response.choices[0].message.content.trim();
+      console.log(`总结生成成功，长度: ${summary.length} 字符`);
+      
+      return summary;
+    } catch (error) {
+      console.error("生成评价总结失败:", error.message);
+      throw new Error(`生成评价总结失败: ${error.message}`);
     }
   }
 }

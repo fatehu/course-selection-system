@@ -126,9 +126,26 @@
         </div>
       </div>
       
+      <!-- 深度思考功能区域 -->
+      <div class="deep-thinking-section">
+        <div class="section-title">
+          <i class="fas fa-brain"></i> 深度思考
+          <div class="toggle-switch">
+            <input type="checkbox" id="deep-thinking-toggle" v-model="deepThinkingEnabled">
+            <label for="deep-thinking-toggle"></label>
+          </div>
+        </div>
+        
+        <!-- 显示深度思考状态信息 -->
+        <div class="deep-thinking-info" v-if="deepThinkingEnabled">
+          <p><i class="fas fa-info-circle"></i> 开启后AI将展示思考过程</p>
+          <p class="deep-thinking-warning"><i class="fas fa-exclamation-triangle"></i> 注意：深度思考模式下响应时间可能稍长</p>
+        </div>
+      </div>
+      
       <!-- 底部设置区域 -->
       <div class="sidebar-footer">
-        <button class="settings-button">
+        <button class="settings-button" @click="goToSettings">
           <i class="fas fa-cog"></i> 设置
         </button>
       </div>
@@ -189,7 +206,18 @@
                 <div class="dot"></div>
               </div>
               <!-- 否则显示消息内容 -->
-              <div v-else class="message-content" v-html="formatMessage(message.content)"></div>
+              <div v-else>
+                <!-- 如果有思维链，先显示思维链 -->
+                  <div v-if="message.reasoning" class="reasoning-content">
+                    <div class="reasoning-header" @click="toggleReasoning(index)">
+                      <i :class="['fas', message.showReasoning ? 'fa-chevron-down' : 'fa-chevron-right']"></i>
+                      思考过程
+                    </div>
+                    <div class="reasoning-body" v-show="message.showReasoning" v-html="formatMessage(message.reasoning)"></div>
+                  </div>
+                <!-- 显示主要回答 -->
+                <div class="message-content" v-html="formatMessage(message.content)"></div>
+              </div>
             </div>
             <div class="message-avatar user-avatar" v-if="message.role === 'user'">
               <i class="fas fa-user"></i>
@@ -219,6 +247,9 @@
           <div v-if="webSearchEnabled" class="web-search-indicator">
             <i class="fas fa-globe"></i> 网络搜索已开启
           </div>
+          <div v-if="deepThinkingEnabled" class="deep-thinking-indicator">
+            <i class="fas fa-brain"></i> 深度思考已开启
+          </div>
           <textarea 
             v-model="userInput" 
             placeholder="输入你的问题..." 
@@ -242,7 +273,10 @@
           <p v-if="webSearchEnabled">
             AI辅导员将使用网络搜索获取最新信息。搜索结果仅供参考，请验证重要信息的准确性。
           </p>
-          <p v-else>
+          <p v-if="deepThinkingEnabled">
+            深度思考模式已开启，AI辅导员将展示其思考过程。
+          </p>
+          <p v-if="!webSearchEnabled && !deepThinkingEnabled">
             AI辅导员正在进行内测阶段，回答仅供参考。请对照学校官方文件验证信息准确性。
           </p>
         </div>
@@ -320,6 +354,8 @@ export default {
       availableSearchEngines: [],
       activeSearchEngines: [],
       searchEnginesLoaded: false,
+      // 深度思考相关属性
+      deepThinkingEnabled: false,
     };
   },
   computed: {
@@ -401,6 +437,15 @@ export default {
     window.removeEventListener('resize', this.handleResize);
   },
   methods: {
+    // 切换思维链显示状态
+    toggleReasoning(index) {
+      this.messages[index].showReasoning = !this.messages[index].showReasoning;
+    },
+    
+    goToSettings() {
+      this.$router.push('/advisor/settings');
+    },
+
     // 格式化消息内容
     formatMessage(content) {
       // Markdown 基础格式转换
@@ -490,12 +535,12 @@ export default {
         this.scrollToBottom();
       });
       
-      // 尝试使用流式接口，传递当前会话ID、知识库ID和网络搜索状态
-      this.tryStreamingRequest(question, this.currentChatId, this.activeKnowledgeBaseId, this.webSearchEnabled)
+      // 尝试使用流式接口，传递当前会话ID、知识库ID、网络搜索状态和深度思考状态
+      this.tryStreamingRequest(question, this.currentChatId, this.activeKnowledgeBaseId, this.webSearchEnabled, this.deepThinkingEnabled)
         .catch((error) => {
           // 如果流式接口失败，使用原来的非流式接口
           console.log('流式接口失败，使用常规接口', error);
-          return this.useRegularRequest(question, this.currentChatId, this.activeKnowledgeBaseId, this.webSearchEnabled);
+          return this.useRegularRequest(question, this.currentChatId, this.activeKnowledgeBaseId, this.webSearchEnabled, this.deepThinkingEnabled);
         })
         .catch((error) => {
           console.error('所有接口都失败了:', error);
@@ -514,14 +559,16 @@ export default {
     },
     
     // 流式请求方法
-    async tryStreamingRequest(question, sessionId, knowledgeBaseId, useWebSearch) {
+    async tryStreamingRequest(question, sessionId, knowledgeBaseId, useWebSearch, useDeepThinking) {
       const streamUrl = '/advisor/ask-stream';
 
       // 添加一个新的 AI 消息用于显示流式内容，初始状态为加载中
       const advisorMessageIndex = this.messages.push({
         role: 'advisor',
         content: '',
-        isLoading: true
+        reasoning: useDeepThinking ? '' : null, // 如果使用深度思考，准备存储思维链
+        isLoading: true,
+        showReasoning: true // 默认显示思维链
       }) - 1;
       
       // 滚动到新消息
@@ -546,10 +593,11 @@ export default {
         question, 
         sessionId, 
         knowledgeBaseId,
-        useWebSearch
+        useWebSearch,
+        useDeepThinking // 新增深度思考参数
       });
 
-      // 修改：传递所有参数，包括网络搜索状态
+      // 修改：传递所有参数，包括网络搜索状态和深度思考状态
       const response = await fetch(fullUrl, {
         method: 'POST',
         headers: headers,
@@ -557,7 +605,8 @@ export default {
           question,
           sessionId,
           knowledgeBaseId,
-          useWebSearch
+          useWebSearch,
+          useDeepThinking
         }),
       });
       
@@ -609,8 +658,24 @@ export default {
                     if (this.messages[advisorMessageIndex].isLoading) {
                       this.messages[advisorMessageIndex].isLoading = false;
                     }
-                    // 更新消息内容
-                    this.messages[advisorMessageIndex].content += data.content;
+                    
+                    // 根据内容类型更新不同部分
+                    if (data.contentType === 'reasoning') {
+                      console.log(`[前端] 收到思维链数据，长度: ${data.content.length}`);
+                     
+                      // 确保reasoning字段已初始化
+                      if (this.messages[advisorMessageIndex].reasoning === null ||
+                          this.messages[advisorMessageIndex].reasoning === undefined) {
+                        this.messages[advisorMessageIndex].reasoning = '';
+                      }
+
+                      // 直接修改对象属性
+                      this.messages[advisorMessageIndex].reasoning = (this.messages[advisorMessageIndex].reasoning || '') + data.content;
+                    } else {
+                      console.log(`[前端] 收到回答数据，长度: ${data.content.length}`);
+                      // 直接修改对象属性
+                      this.messages[advisorMessageIndex].content = (this.messages[advisorMessageIndex].content || '') + data.content;
+                    }
                     break;
                     
                   case 'end':
@@ -630,6 +695,14 @@ export default {
                       if (userMessages === 1) {
                         this.generateTitle(this.currentChatId);
                       }
+                    }
+
+                    // 流式传输结束后关闭思维链显示
+                    // 确保消息存在且有思维链``
+                    if (this.messages[advisorMessageIndex] && 
+                      this.messages[advisorMessageIndex].reasoning) {
+                      console.log('思维链传输完成，自动折叠显示');
+                      this.messages[advisorMessageIndex].showReasoning = false;
                     }
                     
                     // 流式传输结束
@@ -673,19 +746,19 @@ export default {
       }
     },
     
-    // 新增：设置当前使用的知识库
+    // 设置当前使用的知识库
     setActiveKnowledgeBase(knowledgeBaseId) {
       this.activeKnowledgeBaseId = knowledgeBaseId;
       console.log('切换到知识库:', knowledgeBaseId);
     },
     
-    // 新增：获取知识库名称
+    // 获取知识库名称
     getKnowledgeBaseName(id) {
       const kb = this.knowledgeBases.find(kb => kb.id == id);
       return kb ? kb.name : '';
     },
     
-    // 新增：跳转到知识库管理页面
+    // 跳转到知识库管理页面
     goToKnowledgeBaseManager() {
       this.$router.push('/knowledge-base');
     },
@@ -748,12 +821,14 @@ export default {
     },
 
     // 常规请求方法
-    async useRegularRequest(question, sessionId, knowledgeBaseId, useWebSearch) {
+    async useRegularRequest(question, sessionId, knowledgeBaseId, useWebSearch, useDeepThinking) {
       // 添加一个新的 AI 消息用于显示内容，初始状态为加载中
       const advisorMessageIndex = this.messages.push({
         role: 'advisor',
         content: '',
-        isLoading: true
+        reasoning: useDeepThinking ? '' : null, // 如果使用深度思考，准备存储思维链
+        isLoading: true,
+        showReasoning: false
       }) - 1;
       
       // 滚动到新消息
@@ -765,15 +840,17 @@ export default {
         question, 
         sessionId, 
         knowledgeBaseId,
-        useWebSearch
+        useWebSearch,
+        useDeepThinking
       });
       
-      // 修改：传递所有参数，包括网络搜索状态
+      // 修改：传递所有参数，包括网络搜索状态和深度思考状态
       const response = await axios.post('/advisor/ask', { 
         question,
         sessionId,
         knowledgeBaseId,
-        useWebSearch
+        useWebSearch,
+        useDeepThinking
       });
       
       console.log('收到常规响应:', response.data);
@@ -795,6 +872,11 @@ export default {
       // 收到响应后，更新消息内容并设置加载状态为false
       this.messages[advisorMessageIndex].isLoading = false;
       this.messages[advisorMessageIndex].content = response.data?.answer || "收到响应但格式不正确";
+      
+      // 如果有思维链内容，添加到消息中
+      if (response.data?.reasoning) {
+        this.messages[advisorMessageIndex].reasoning = response.data.reasoning;
+      }
     },
     
     // 切换侧边栏显示状态
@@ -1095,7 +1177,7 @@ export default {
       } catch (error) {
         console.error('设置搜索引擎失败:', error);
       }
-    },
+    }
   }
 };
 </script>
@@ -1523,6 +1605,8 @@ export default {
   background-color: #f5f5f5;
   border-radius: 24px;
   padding: 8px 16px;
+  position: relative;
+  margin-top: 25px; /* 为指示器腾出空间 */
 }
 
 textarea {
@@ -1777,150 +1861,7 @@ textarea {
   transform: translateY(-2px);
 }
 
-/* 新增模态框样式 */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-container {
-  width: 100%;
-  max-width: 400px;
-  background-color: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
-  animation: modal-in 0.2s ease-out;
-}
-
-@keyframes modal-in {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.modal-header {
-  padding: 16px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #eee;
-}
-
-.modal-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  color: #333;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 1rem;
-  color: #666;
-  cursor: pointer;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background-color: #f0f0f0;
-  color: #333;
-}
-
-.modal-body {
-  padding: 20px;
-}
-
-.rename-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  transition: border-color 0.2s;
-}
-
-.rename-input:focus {
-  border-color: #5E35B1;
-  outline: none;
-}
-
-.warning-text {
-  color: #f44336;
-  font-size: 0.9rem;
-  margin-top: 8px;
-}
-
-.modal-footer {
-  padding: 12px 20px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  border-top: 1px solid #eee;
-}
-
-.cancel-button, .confirm-button {
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: none;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cancel-button {
-  background-color: #f0f0f0;
-  color: #333;
-}
-
-.cancel-button:hover {
-  background-color: #e0e0e0;
-}
-
-.confirm-button {
-  background-color: #5E35B1;
-  color: white;
-}
-
-.confirm-button:hover {
-  background-color: #4527A0;
-}
-
-.delete-button {
-  background-color: #f44336;
-}
-
-.delete-button:hover {
-  background-color: #e53935;
-}
-
-/* 响应式调整 */
-@media (max-width: 768px) {
-  .chat-container {
-    max-width: 100%; /* 在小屏幕上占据全部宽度 */
-  }
-}
-
-/* 网络搜索相关样式 */
+/* 网络搜索样式 */
 .web-search-section {
   padding: 1rem;
   border-bottom: 1px solid #e0e0e0;
@@ -2054,9 +1995,81 @@ textarea {
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
-/* 确保输入容器有相对定位以支持web-search-indicator */
-.input-container {
-  position: relative;
-  margin-top: 25px; /* 为指示器腾出空间 */
+/* 深度思考样式 */
+.deep-thinking-section {
+  padding: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #f8f9fa;
+}
+
+.deep-thinking-info {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.deep-thinking-warning {
+  color: #e65100;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0.5rem;
+}
+
+.deep-thinking-indicator {
+  position: absolute;
+  top: -25px;
+  left: 140px; /* 在网络搜索指示器右侧 */
+  background-color: #e1f5fe;
+  color: #0288d1;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* 思维链样式 */
+.reasoning-content {
+  margin-bottom: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.reasoning-header {
+  padding: 8px 12px;
+  background-color: #f0f0f0;
+  color: #555;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reasoning-header:hover {
+  background-color: #e0e0e0;
+}
+
+.reasoning-body {
+  padding: 12px;
+  background-color: #f9f9f9;
+  color: #666;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .chat-container {
+    max-width: 100%; /* 在小屏幕上占据全部宽度 */
+  }
 }
 </style>

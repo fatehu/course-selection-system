@@ -9,25 +9,29 @@ export default {
    * @param {string} question - 用户问题
    * @param {string} sessionId - 会话ID（可选）
    * @param {string} knowledgeBaseId - 知识库ID（可选）
+   * @param {boolean} useWebSearch - 是否使用网络搜索（可选）
    * @returns {Promise} - 返回AI回答
    */
-  askQuestion(question, sessionId = null, knowledgeBaseId = null) {
+  askQuestion(question, sessionId = null, knowledgeBaseId = null, useWebSearch = false) {
     return axios.post(`${API_PATH}/ask`, { 
       question, 
       sessionId,
-      knowledgeBaseId 
+      knowledgeBaseId,
+      useWebSearch
     });
   },
-  
+
   /**
    * 向AI辅导员提问 - 流式版本
    * 注意：此方法返回fetch的原始Response对象，需自行处理流
    * @param {string} question - 用户问题
    * @param {string} sessionId - 会话ID（可选）
    * @param {string} knowledgeBaseId - 知识库ID（可选）
+   * @param {boolean} useWebSearch - 是否使用网络搜索（可选）
+   * @param {boolean} useDeepThinking - 是否开启深度思考（可选） 
    * @returns {Promise} - 返回流式响应
    */
-  askQuestionStream(question, sessionId = null, knowledgeBaseId = null) {
+  askQuestionStream(question, sessionId = null, knowledgeBaseId = null, useWebSearch = false, useDeepThinking = false) {
     // 获取baseURL，已经包含了 /api
     const baseURL = axios.defaults.baseURL || '';
     
@@ -40,7 +44,9 @@ export default {
       body: JSON.stringify({ 
         question, 
         sessionId,
-        knowledgeBaseId 
+        knowledgeBaseId,
+        useWebSearch,
+        useDeepThinking
       })
     });
   },

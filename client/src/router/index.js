@@ -169,6 +169,14 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/advisor/settings',
+    name: 'AdvisorSettings',
+    component: () => import('../views/AdvisorSettings.vue'),
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('../views/NotFound.vue'),
