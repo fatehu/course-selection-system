@@ -145,7 +145,7 @@
       
       <!-- 底部设置区域 -->
       <div class="sidebar-footer">
-        <button class="settings-button">
+        <button class="settings-button" @click="goToSettings">
           <i class="fas fa-cog"></i> 设置
         </button>
       </div>
@@ -442,6 +442,10 @@ export default {
       this.messages[index].showReasoning = !this.messages[index].showReasoning;
     },
     
+    goToSettings() {
+      this.$router.push('/advisor/settings');
+    },
+
     // 格式化消息内容
     formatMessage(content) {
       // Markdown 基础格式转换

@@ -25,7 +25,7 @@ class DeepSeekService {
   }
   
   // 生成回答
-  async generateAnswer(question, relevantDocs, conversationHistory = [], customSystemPrompt = null) {
+  async generateAnswer(question, relevantDocs, conversationHistory = [], customSystemPrompt = null, aiParams = {}) {
     try {
       // 提取相关文档的内容
       const context = relevantDocs
@@ -60,12 +60,16 @@ class DeepSeekService {
         content: `基于以下参考文档回答问题:\n\n${context}\n\n学生问题: ${question}`
       });
       
-      const completion = await this.client.chat.completions.create({
+      // 使用默认参数与用户自定义参数合并
+      const finalParams = {
         model: "deepseek-chat",
         messages: messages,
         temperature: 0.7,
-        max_tokens: 1000
-      });
+        max_tokens: 1000,
+        ...aiParams // 合并用户自定义参数
+      };
+      
+      const completion = await this.client.chat.completions.create(finalParams);
       
       console.log("DeepSeek响应成功");
       return completion.choices[0].message.content;
@@ -73,10 +77,10 @@ class DeepSeekService {
       console.error("DeepSeek API调用失败:", error.message);
       return "抱歉，AI服务暂时不可用，请稍后再试。如有紧急问题，请联系教务处。";
     }
-  };
+  }
 
   // 流式生成回答（带思维链）
-  async *generateAnswerStreamWithReasoning(question, relevantDocs, conversationHistory = [], customSystemPrompt = null) {
+  async *generateAnswerStreamWithReasoning(question, relevantDocs, conversationHistory = [], customSystemPrompt = null, aiParams = {}) {
     try {
       // 提取相关文档的内容
       const context = relevantDocs
@@ -151,14 +155,21 @@ class DeepSeekService {
       // 再次打印消息序列以验证
       console.log("最终消息序列:", messages.map(m => m.role).join(', '));
       
+      // 使用默认参数与用户自定义参数合并
+      const finalParams = {
+        model: "deepseek-reasoner", // 使用带思维链的模型
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 1000,
+        stream: true,
+        ...aiParams // 合并用户自定义参数
+      };
+      
+      // stream必须为true
+      finalParams.stream = true;
+      
       try {
-        const stream = await this.client.chat.completions.create({
-          model: "deepseek-reasoner", // 使用带思维链的模型
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 1000,
-          stream: true,
-        });
+        const stream = await this.client.chat.completions.create(finalParams);
         
         console.log("DeepSeek开始流式响应(思维链模式)");
         
@@ -206,10 +217,10 @@ class DeepSeekService {
         content: "抱歉，深度思考模式暂时不可用，已切换到标准回答模式。" 
       };
     }
-  };
+  }
 
-  // 保留原始的流式生成回答方法
-  async *generateAnswerStream(question, relevantDocs, conversationHistory = [], customSystemPrompt = null) {
+  // 流式生成回答
+  async *generateAnswerStream(question, relevantDocs, conversationHistory = [], customSystemPrompt = null, aiParams = {}) {
     try {
       // 提取相关文档的内容
       const context = relevantDocs
@@ -244,13 +255,20 @@ class DeepSeekService {
         content: `基于以下参考文档回答问题:\n\n${context}\n\n学生问题: ${question}`
       });
       
-      const stream = await this.client.chat.completions.create({
+      // 使用默认参数与用户自定义参数合并
+      const finalParams = {
         model: "deepseek-chat", // 使用标准聊天模型
         messages: messages,
         temperature: 0.7,
         max_tokens: 1000,
         stream: true,
-      });
+        ...aiParams // 合并用户自定义参数
+      };
+      
+      // stream必须为true
+      finalParams.stream = true;
+      
+      const stream = await this.client.chat.completions.create(finalParams);
       
       console.log("DeepSeek开始流式响应");
       
@@ -266,7 +284,7 @@ class DeepSeekService {
       console.error("DeepSeek API调用失败:", error.message);
       yield "抱歉，AI服务暂时不可用，请稍后再试。如有紧急问题，请联系教务处。";
     }
-  };
+  }
 }
 
 module.exports = DeepSeekService;
