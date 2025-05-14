@@ -453,6 +453,40 @@ class AdvisorService {
             questionText;
     }
   }
+
+  // 生成课程评价总结
+  async generateCourseReviewSummary(courseName, reviewContents) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    try {
+      console.log(`生成"${courseName}"的评价总结，评价数量: ${reviewContents.split('\n\n').length}`);
+      
+      const prompt = `你是一名课程评价分析专家。请总结以下关于"${courseName}"课程的学生评价，提炼出课程的优点、可能的不足以及整体评价。请以分点形式组织回答，确保内容全面且客观。评价内容如下：\n\n${reviewContents}`;
+      
+      const response = await this.deepseekService.client.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          { 
+            role: "system", 
+            content: "你是一个精通教育评价分析的AI助手，擅长整理和分析学生对课程的评价，提供客观、准确的总结。" 
+          },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 100
+      });
+      
+      const summary = response.choices[0].message.content.trim();
+      console.log(`总结生成成功，长度: ${summary.length} 字符`);
+      
+      return summary;
+    } catch (error) {
+      console.error("生成评价总结失败:", error.message);
+      throw new Error(`生成评价总结失败: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new AdvisorService();
