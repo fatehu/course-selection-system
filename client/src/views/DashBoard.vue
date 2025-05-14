@@ -20,6 +20,9 @@
         <template #header>
           <div class="card-header">
             <span>{{ announcement.title }}</span>
+            <el-tag :type="categoryTagType(announcement.category)" size="small">
+              {{ categoryLabels[announcement.category] }}
+            </el-tag>
           </div>
         </template>
         <div class="announcement-content">
@@ -210,6 +213,8 @@ export default {
     // 获取所有公告
     const announcements = computed(() => announcementStore.announcements)
 
+    console.log(announcements)
+
     // 只显示已发布的公告
     const publishedAnnouncements = computed(() =>
       announcements.value.filter((announcement) => announcement.is_published),
@@ -307,6 +312,24 @@ export default {
       return plainText
     }
 
+    // 分类标签样式
+    const categoryTagType = (category) => {
+      const types = {
+        system: 'primary',
+        general: 'success',
+        course: 'warning',
+        exam: 'danger',
+      }
+      return types[category] || 'info'
+    }
+
+    const categoryLabels = {
+      system: '系统公告',
+      general: '活动通知',
+      course: '教学安排',
+      exam: '考试安排',
+    }
+
     onMounted(() => {
       fetchDashboardData()
       fetchAnnouncements()
@@ -328,6 +351,8 @@ export default {
       viewCourse,
       getStatusText,
       truncateContent,
+      categoryTagType,
+      categoryLabels,
     }
   },
 }

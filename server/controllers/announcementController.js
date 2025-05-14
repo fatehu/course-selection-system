@@ -1,9 +1,27 @@
 const Announcement = require('../models/announcementModel')
+const redis = require('../config/redis')
 
 // 获取所有公告
 exports.getAllAnnouncements = async (req, res) => {
   try {
+    const cacheKey = 'announcements:all'
+
+    // 检查 Redis 缓存
+    const cachedAnnouncements = await redis.get(cacheKey)
+    if (cachedAnnouncements) {
+      console.log('从 Redis 缓存中获取公告列表')
+      return res.status(200).json({
+        success: true,
+        count: JSON.parse(cachedAnnouncements).length,
+        data: JSON.parse(cachedAnnouncements),
+      })
+    }
+
+    // 如果缓存不存在，从数据库查询
     const announcements = await Announcement.getAll()
+
+    // 将结果存入 Redis，设置过期时间为 1 小时
+    await redis.set(cacheKey, JSON.stringify(announcements), 'EX', 3600)
 
     res.status(200).json({
       success: true,
@@ -23,7 +41,21 @@ exports.getAllAnnouncements = async (req, res) => {
 // 获取单个公告
 exports.getAnnouncement = async (req, res) => {
   try {
-    const announcement = await Announcement.getById(req.params.id)
+    const announcementId = req.params.id
+    const cacheKey = `announcement:${announcementId}`
+
+    // 检查 Redis 缓存
+    const cachedAnnouncement = await redis.get(cacheKey)
+    if (cachedAnnouncement) {
+      console.log(`从 Redis 缓存中获取公告 ID: ${announcementId}`)
+      return res.status(200).json({
+        success: true,
+        data: JSON.parse(cachedAnnouncement),
+      })
+    }
+
+    // 如果缓存不存在，从数据库查询
+    const announcement = await Announcement.getById(announcementId)
 
     if (!announcement) {
       return res.status(404).json({
@@ -31,6 +63,9 @@ exports.getAnnouncement = async (req, res) => {
         message: '公告不存在',
       })
     }
+
+    // 将结果存入 Redis，设置过期时间为 1 小时
+    await redis.set(cacheKey, JSON.stringify(announcement), 'EX', 3600)
 
     res.status(200).json({
       success: true,
@@ -59,6 +94,9 @@ exports.createAnnouncement = async (req, res) => {
       category,
       is_published,
     })
+
+    // 清理 Redis 缓存
+    await redis.del('announcements:all') // 删除公告列表缓存
 
     res.status(201).json({
       success: true,
@@ -99,7 +137,7 @@ exports.updateAnnouncement = async (req, res) => {
         success: false,
         message: '没有权限执行此操作',
       })
-    } 
+    }
 
     const success = await Announcement.update(announcementId, req.body)
 
@@ -109,6 +147,11 @@ exports.updateAnnouncement = async (req, res) => {
         message: '更新公告失败',
       })
     }
+
+    // 清理 Redis 缓存
+    const cacheKey = `announcement:${announcementId}`
+    await redis.del(cacheKey) // 删除单个公告缓存
+    await redis.del('announcements:all') // 删除公告列表缓存
 
     // 获取更新后的公告
     const updatedAnnouncement = await Announcement.getById(announcementId)
@@ -154,6 +197,7 @@ exports.deleteAnnouncement = async (req, res) => {
       })
     }
 
+    // 删除公告
     const success = await Announcement.delete(announcementId)
 
     if (!success) {
@@ -162,6 +206,11 @@ exports.deleteAnnouncement = async (req, res) => {
         message: '删除公告失败',
       })
     }
+
+    // 清理 Redis 缓存
+    const cacheKey = `announcement:${announcementId}`
+    await redis.del(cacheKey) // 删除单个公告缓存
+    await redis.del('announcements:all') // 删除公告列表缓存
 
     res.status(200).json({
       success: true,
