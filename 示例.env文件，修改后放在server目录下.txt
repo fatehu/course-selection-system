@@ -14,3 +14,8 @@ DASHSCOPE_API_KEY=example
 CACHE_DIRECTORY=./data/cache
 VECTOR_STORE_PATH=./data/vector-cache.json
 PDF_DIRECTORY=./data/pdf
+
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_PASSWORD= # 如果没有密码，可以留空
+REDIS_DB=0
