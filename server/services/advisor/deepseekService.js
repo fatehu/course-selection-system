@@ -25,7 +25,7 @@ class DeepSeekService {
   }
   
   // 生成回答
-  async generateAnswer(question, relevantDocs, conversationHistory = []) {
+  async generateAnswer(question, relevantDocs, conversationHistory = [], customSystemPrompt = null) {
     try {
       // 提取相关文档的内容
       const context = relevantDocs
@@ -34,9 +34,12 @@ class DeepSeekService {
       
       console.log(`向DeepSeek发送请求，问题长度: ${question.length}, 上下文长度: ${context.length}, 对话历史: ${conversationHistory.length}条`);
       
+      // 使用自定义系统提示或默认提示
+      const systemPrompt = customSystemPrompt || this.systemPrompt;
+      
       // 构建消息数组，包含系统提示、对话历史和当前问题
       const messages = [
-        { role: "system", content: this.systemPrompt }
+        { role: "system", content: systemPrompt }
       ];
       
       // 添加对话历史
@@ -73,7 +76,7 @@ class DeepSeekService {
   };
 
   // 流式生成回答
-  async *generateAnswerStream(question, relevantDocs, conversationHistory = []) {
+  async *generateAnswerStream(question, relevantDocs, conversationHistory = [], customSystemPrompt = null) {
     try {
       // 提取相关文档的内容
       const context = relevantDocs
@@ -82,9 +85,12 @@ class DeepSeekService {
       
       console.log(`向DeepSeek发送流式请求，问题长度: ${question.length}, 上下文长度: ${context.length}, 对话历史: ${conversationHistory.length}条`);
       
+      // 使用自定义系统提示或默认提示
+      const systemPrompt = customSystemPrompt || this.systemPrompt;
+      
       // 构建消息数组，包含系统提示、对话历史和当前问题
       const messages = [
-        { role: "system", content: this.systemPrompt }
+        { role: "system", content: systemPrompt }
       ];
       
       // 添加对话历史

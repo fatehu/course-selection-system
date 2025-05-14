@@ -1,5 +1,6 @@
 const advisorService = require('../services/advisor');
 const conversationService = require('../services/advisor/conversationService');
+const webSearchService = require('../services/webSearchService');
 
 // 处理超时的Promise包装器
 function withTimeout(promise, timeoutMs = 30000) {
@@ -22,7 +23,7 @@ function withTimeout(promise, timeoutMs = 30000) {
 // AI辅导员问答API
 const askQuestion = async (req, res) => {
   try {
-    const { question, sessionId, knowledgeBaseId } = req.body;
+    const { question, sessionId, knowledgeBaseId, useWebSearch } = req.body;
     const userId = req.user.id;
     
     if (!question || typeof question !== 'string') {
@@ -32,11 +33,11 @@ const askQuestion = async (req, res) => {
       });
     }
     
-    console.log(`${new Date().toISOString()} - 收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'}`);
+    console.log(`${new Date().toISOString()} - 收到问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 使用网络搜索: ${useWebSearch || false}`);
     
     // 使用超时包装器处理长时间运行的请求
     const result = await withTimeout(
-      advisorService.answerQuestion(question, userId, sessionId, knowledgeBaseId),
+      advisorService.answerQuestion(question, userId, sessionId, knowledgeBaseId, useWebSearch || false),
       60000
     );
     
@@ -68,7 +69,7 @@ const askQuestion = async (req, res) => {
 // AI辅导员问答API - 流式输出版本
 const askQuestionStream = async (req, res) => {
   try {
-    const { question, sessionId, knowledgeBaseId } = req.body;
+    const { question, sessionId, knowledgeBaseId, useWebSearch } = req.body;
     const userId = req.user.id;
     
     if (!question || typeof question !== 'string') {
@@ -78,7 +79,7 @@ const askQuestionStream = async (req, res) => {
       });
     }
     
-    console.log(`${new Date().toISOString()} - 收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'}`);
+    console.log(`${new Date().toISOString()} - 收到流式问题: "${question}" 用户ID: ${userId} 会话ID: ${sessionId || '新会话'} 使用网络搜索: ${useWebSearch || false}`);
     
     // 设置SSE响应头
     res.setHeader('Content-Type', 'text/event-stream');
@@ -91,8 +92,14 @@ const askQuestionStream = async (req, res) => {
     res.write('data: {"type": "start", "message": "正在处理您的问题..."}\n\n');
     
     try {
-      // 调用服务获取流式回答
-      const answerStream = advisorService.answerQuestionStream(question, userId, sessionId, knowledgeBaseId);
+      // 调用服务获取流式回答，传递网络搜索参数
+      const answerStream = advisorService.answerQuestionStream(
+        question, 
+        userId, 
+        sessionId, 
+        knowledgeBaseId, 
+        useWebSearch || false
+      );
       
       let isFirstChunk = true;
       let currentSessionId = null;
@@ -304,6 +311,80 @@ const generateTitle = async (req, res) => {
   }
 };
 
+// 获取可用搜索引擎列表
+const getSearchEngines = async (req, res) => {
+  try {
+    const availableEngines = webSearchService.getAvailableEngines();
+    const activeEngines = webSearchService.activeEngines;
+    
+    res.json({
+      success: true,
+      availableEngines,
+      activeEngines
+    });
+  } catch (error) {
+    console.error("获取搜索引擎列表出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+// 设置激活的搜索引擎
+const setActiveEngines = async (req, res) => {
+  try {
+    const { engineIds } = req.body;
+    
+    if (!Array.isArray(engineIds)) {
+      return res.status(400).json({
+        success: false,
+        error: "引擎ID列表必须是数组"
+      });
+    }
+    
+    const activeEngines = webSearchService.setActiveEngines(engineIds);
+    
+    res.json({
+      success: true,
+      activeEngines
+    });
+  } catch (error) {
+    console.error("设置搜索引擎出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
+// 执行网络搜索
+const searchWeb = async (req, res) => {
+  try {
+    const { query, limit } = req.body;
+    
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: "搜索查询不能为空且必须是字符串"
+      });
+    }
+    
+    console.log(`执行网络搜索: "${query}"`);
+    const searchLimit = limit && !isNaN(parseInt(limit)) ? parseInt(limit) : 10;
+    
+    const results = await webSearchService.search(query, searchLimit);
+    
+    res.json(results);
+  } catch (error) {
+    console.error("网络搜索出错:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "服务器内部错误"
+    });
+  }
+};
+
 module.exports = {
   askQuestion,
   askQuestionStream,
@@ -311,5 +392,8 @@ module.exports = {
   getConversationMessages,
   renameConversation,
   deleteConversation,
-  generateTitle
+  generateTitle,
+  getSearchEngines,
+  setActiveEngines,
+  searchWeb
 };

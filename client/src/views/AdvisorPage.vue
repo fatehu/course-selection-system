@@ -86,6 +86,45 @@
           </div>
         </div>
       </div>
+
+      <!-- 网络搜索功能 -->
+      <div class="web-search-section">
+        <div class="section-title">
+          <i class="fas fa-search-plus"></i> 网络搜索
+          <div class="toggle-switch">
+            <input type="checkbox" id="web-search-toggle" v-model="webSearchEnabled">
+            <label for="web-search-toggle"></label>
+          </div>
+        </div>
+        
+        <!-- 显示网络搜索状态信息 -->
+        <div class="web-search-info" v-if="webSearchEnabled">
+          <p v-if="availableSearchEngines.length === 0" class="no-engines-warning">
+            <i class="fas fa-exclamation-circle"></i> 
+            未配置搜索引擎API密钥，请联系管理员
+          </p>
+          
+          <div class="search-engine-list" v-else>
+            <p class="engine-label">可用搜索引擎:</p>
+            <div class="engine-badges">
+              <div 
+                v-for="engine in availableSearchEngines" 
+                :key="engine.id"
+                class="engine-badge"
+                :class="{ active: isEngineActive(engine.id) }"
+                @click="toggleSearchEngine(engine.id)"
+                :title="engine.description"
+              >
+                {{ engine.name }}
+              </div>
+            </div>
+          </div>
+          
+          <div class="web-search-tips">
+            <p><i class="fas fa-info-circle"></i> 开启后AI可访问最新互联网信息</p>
+          </div>
+        </div>
+      </div>
       
       <!-- 底部设置区域 -->
       <div class="sidebar-footer">
@@ -177,6 +216,9 @@
       <!-- 输入区域 -->
       <div class="input-area">
         <div class="input-container">
+          <div v-if="webSearchEnabled" class="web-search-indicator">
+            <i class="fas fa-globe"></i> 网络搜索已开启
+          </div>
           <textarea 
             v-model="userInput" 
             placeholder="输入你的问题..." 
@@ -194,8 +236,15 @@
             <i class="fas fa-paper-plane"></i>
           </button>
         </div>
+        
+        <!-- 更新底部提示信息 -->
         <div class="input-footer">
-          <p>AI辅导员正在进行内测阶段，回答仅供参考。请对照学校官方文件验证信息准确性。</p>
+          <p v-if="webSearchEnabled">
+            AI辅导员将使用网络搜索获取最新信息。搜索结果仅供参考，请验证重要信息的准确性。
+          </p>
+          <p v-else>
+            AI辅导员正在进行内测阶段，回答仅供参考。请对照学校官方文件验证信息准确性。
+          </p>
         </div>
       </div>
     </div>
@@ -266,6 +315,11 @@ export default {
       modalTitle: '', // 模态框标题
       selectedChat: null, // 当前选中的对话
       newTitle: '', // 重命名输入
+      // 网络搜索相关属性
+      webSearchEnabled: false,
+      availableSearchEngines: [],
+      activeSearchEngines: [],
+      searchEnginesLoaded: false,
     };
   },
   computed: {
@@ -333,6 +387,9 @@ export default {
       
     // 不再根据屏幕尺寸自动显示侧边栏
     window.addEventListener('resize', this.handleResize);
+  
+    // 加载搜索引擎配置
+    await this.loadSearchEngines();
   },
   beforeUnmount() {
     // 移除滚动监听器
@@ -433,12 +490,12 @@ export default {
         this.scrollToBottom();
       });
       
-      // 尝试使用流式接口，传递当前会话ID和知识库ID
-      this.tryStreamingRequest(question, this.currentChatId)
+      // 尝试使用流式接口，传递当前会话ID、知识库ID和网络搜索状态
+      this.tryStreamingRequest(question, this.currentChatId, this.activeKnowledgeBaseId, this.webSearchEnabled)
         .catch((error) => {
           // 如果流式接口失败，使用原来的非流式接口
           console.log('流式接口失败，使用常规接口', error);
-          return this.useRegularRequest(question, this.currentChatId);
+          return this.useRegularRequest(question, this.currentChatId, this.activeKnowledgeBaseId, this.webSearchEnabled);
         })
         .catch((error) => {
           console.error('所有接口都失败了:', error);
@@ -457,7 +514,7 @@ export default {
     },
     
     // 流式请求方法
-    async tryStreamingRequest(question, sessionId) {
+    async tryStreamingRequest(question, sessionId, knowledgeBaseId, useWebSearch) {
       const streamUrl = '/advisor/ask-stream';
 
       // 添加一个新的 AI 消息用于显示流式内容，初始状态为加载中
@@ -485,16 +542,22 @@ export default {
 
       // 使用 axios 配置的 baseURL
       const fullUrl = `${this.baseURL}${streamUrl}`;
-      console.log('发送流式请求:', fullUrl, { question, sessionId, knowledgeBaseId: this.activeKnowledgeBaseId });
+      console.log('发送流式请求:', fullUrl, { 
+        question, 
+        sessionId, 
+        knowledgeBaseId,
+        useWebSearch
+      });
 
-      // 修改：传递知识库ID
+      // 修改：传递所有参数，包括网络搜索状态
       const response = await fetch(fullUrl, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({ 
           question,
           sessionId,
-          knowledgeBaseId: this.activeKnowledgeBaseId // 添加知识库ID
+          knowledgeBaseId,
+          useWebSearch
         }),
       });
       
@@ -685,7 +748,7 @@ export default {
     },
 
     // 常规请求方法
-    async useRegularRequest(question, sessionId) {
+    async useRegularRequest(question, sessionId, knowledgeBaseId, useWebSearch) {
       // 添加一个新的 AI 消息用于显示内容，初始状态为加载中
       const advisorMessageIndex = this.messages.push({
         role: 'advisor',
@@ -698,12 +761,19 @@ export default {
         this.scrollToBottom();
       });
       
-      console.log('发送常规请求:', { question, sessionId, knowledgeBaseId: this.activeKnowledgeBaseId });
-      // 修改：传递知识库ID
+      console.log('发送常规请求:', { 
+        question, 
+        sessionId, 
+        knowledgeBaseId,
+        useWebSearch
+      });
+      
+      // 修改：传递所有参数，包括网络搜索状态
       const response = await axios.post('/advisor/ask', { 
         question,
         sessionId,
-        knowledgeBaseId: this.activeKnowledgeBaseId // 添加知识库ID
+        knowledgeBaseId,
+        useWebSearch
       });
       
       console.log('收到常规响应:', response.data);
@@ -970,7 +1040,62 @@ export default {
           this.createNewChat();
         }
       }
-    }
+    },
+
+    // 加载搜索引擎配置
+    async loadSearchEngines() {
+      try {
+        console.log('加载搜索引擎配置...');
+        const response = await advisorApi.getSearchEngines();
+        
+        if (response.data && response.data.success) {
+          this.availableSearchEngines = response.data.availableEngines || [];
+          this.activeSearchEngines = response.data.activeEngines || [];
+          this.searchEnginesLoaded = true;
+          console.log('搜索引擎加载成功:', this.availableSearchEngines);
+        } else {
+          console.error('加载搜索引擎失败:', response.data?.error);
+          this.availableSearchEngines = [];
+          this.activeSearchEngines = [];
+        }
+      } catch (error) {
+        console.error('加载搜索引擎失败:', error);
+        this.availableSearchEngines = [];
+        this.activeSearchEngines = [];
+      }
+    },
+    
+    // 检查搜索引擎是否激活
+    isEngineActive(engineId) {
+      return this.activeSearchEngines.includes(engineId);
+    },
+    
+    // 切换搜索引擎状态
+    async toggleSearchEngine(engineId) {
+      let newActiveEngines = [...this.activeSearchEngines];
+      
+      if (this.isEngineActive(engineId)) {
+        // 如果至少有2个引擎激活，则可以移除
+        if (newActiveEngines.length > 1) {
+          newActiveEngines = newActiveEngines.filter(id => id !== engineId);
+        }
+      } else {
+        // 添加到激活列表
+        newActiveEngines.push(engineId);
+      }
+      
+      try {
+        console.log('设置激活搜索引擎:', newActiveEngines);
+        const response = await advisorApi.setActiveEngines(newActiveEngines);
+        
+        if (response.data && response.data.success) {
+          this.activeSearchEngines = response.data.activeEngines;
+          console.log('搜索引擎设置成功:', this.activeSearchEngines);
+        }
+      } catch (error) {
+        console.error('设置搜索引擎失败:', error);
+      }
+    },
   }
 };
 </script>
@@ -1793,5 +1918,145 @@ textarea {
   .chat-container {
     max-width: 100%; /* 在小屏幕上占据全部宽度 */
   }
+}
+
+/* 网络搜索相关样式 */
+.web-search-section {
+  padding: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #f8f9fa;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 24px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-switch label {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.4s;
+  border-radius: 24px;
+}
+
+.toggle-switch label:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + label {
+  background-color: #5E35B1;
+}
+
+.toggle-switch input:checked + label:before {
+  transform: translateX(22px);
+}
+
+.web-search-info {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.no-engines-warning {
+  color: #e65100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  background-color: #fff3e0;
+  border-radius: 6px;
+  margin: 0.5rem 0;
+}
+
+.engine-label {
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.engine-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.engine-badge {
+  background-color: #f0f0f0;
+  border: 1px solid #ddd;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.engine-badge:hover {
+  background-color: #e0e0e0;
+}
+
+.engine-badge.active {
+  background-color: #5E35B1;
+  color: white;
+  border-color: #4527A0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.web-search-tips {
+  font-size: 0.8rem;
+  color: #666;
+  padding: 0.5rem 0;
+  border-top: 1px dashed #e0e0e0;
+  margin-top: 0.5rem;
+}
+
+.web-search-tips p {
+  margin: 0.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.web-search-indicator {
+  position: absolute;
+  top: -25px;
+  left: 16px;
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* 确保输入容器有相对定位以支持web-search-indicator */
+.input-container {
+  position: relative;
+  margin-top: 25px; /* 为指示器腾出空间 */
 }
 </style>
