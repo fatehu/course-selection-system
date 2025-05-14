@@ -9,7 +9,7 @@
   FOREIGN KEY (publisher_id) REFERENCES users(id)
 );`course_selection_system`
 
-ALTER TABLE reviews CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE course_review_summaries CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 SELECT * FROM announcements WHERE id = 1;
 
@@ -59,4 +59,13 @@ CREATE TABLE reviews (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (course_id) REFERENCES courses(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE `course_review_summaries` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `course_id` INT NOT NULL UNIQUE,
+    `summary` TEXT NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (`course_id`) REFERENCES `courses`(`id`)
 );

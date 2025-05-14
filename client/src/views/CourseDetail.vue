@@ -115,6 +115,20 @@
           </el-form-item>
         </el-form>
       </div>
+
+      <h3 class="section-title">课程评价总结</h3>
+
+      <div v-if="loadingSummary" class="loading-placeholder">
+        <el-skeleton :rows="3" animated />
+      </div>
+
+      <div v-else-if="!summary" class="empty-placeholder">暂无评价总结</div>
+
+      <div v-else class="summary-content">
+        <p v-html="summary"></p>
+      </div>
+
+      <el-divider></el-divider>
     </el-card>
   </div>
 </template>
@@ -144,6 +158,8 @@ export default {
     const loading = ref(true)
     const loadingSections = ref(true)
     const loadingReviews = ref(true) // 新增的评价加载状态
+    const loadingSummary = ref(true)
+    const summary = ref('')
     const courseId = route.params.id
 
     // 用户信息和权限
@@ -225,6 +241,25 @@ export default {
       }
     }
 
+    // 获取课程评价总结
+    const fetchSummary = async () => {
+      loadingSummary.value = true
+      try {
+        const response = await fetch(`http://localhost:3000/api/reviews/course/${courseId}/summary`)
+        const data = await response.json()
+        if (data.success) {
+          summary.value = data.data.summary
+        } else {
+          summary.value = ''
+        }
+      } catch (error) {
+        console.error('获取课程评价总结失败', error)
+        ElMessage.error('获取课程评价总结失败')
+      } finally {
+        loadingSummary.value = false
+      }
+    }
+
     // 返回上一页
     const goBack = () => {
       router.back()
@@ -298,16 +333,19 @@ export default {
       fetchCourseDetail()
       fetchSections()
       fetchReviews() // 新增的获取评价数据
+      fetchSummary() // 新增的获取评价总结
     })
 
     return {
       loading,
       loadingSections,
       loadingReviews,
+      loadingSummary,
       course,
       sections,
       reviews,
       newReview,
+      summary,
       isAdmin,
       isTeacher,
       isStudent,
@@ -403,5 +441,14 @@ export default {
 
 .review-content {
   white-space: pre-line;
+}
+
+.summary-content {
+  margin-bottom: 20px;
+  padding: 15px;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  line-height: 1.6;
 }
 </style>
