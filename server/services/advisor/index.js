@@ -475,7 +475,7 @@ class AdvisorService {
           { role: "user", content: prompt }
         ],
         temperature: 0.5,
-        max_tokens: 100
+        max_tokens: 800
       });
       
       const summary = response.choices[0].message.content.trim();
