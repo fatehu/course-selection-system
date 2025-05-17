@@ -256,7 +256,7 @@ export default {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      // 修改：传递默认知识库ID
+      // 传递默认知识库ID
       const response = await fetch(`${baseURL.value}/advisor/ask-stream`, {
         method: 'POST',
         headers: headers,

@@ -10,10 +10,10 @@ const storage = multer.memoryStorage();
 const upload = multer({ 
   storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB限制
+    fileSize: 20 * 1024 * 1024 // 10MB限制
   },
   fileFilter: (req, file, cb) => {
-    const allowedFileTypes = ['.pdf', '.txt', '.doc', '.docx', '.csv', '.md', '.markdown'];
+    const allowedFileTypes = ['.pdf', '.txt', '.doc', '.docx', '.csv', '.md', '.markdown', '.epub','rtf'];
     const ext = path.extname(file.originalname).toLowerCase();
     
     if (allowedFileTypes.includes(ext)) {

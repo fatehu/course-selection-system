@@ -87,63 +87,7 @@
         </div>
       </div>
 
-      <!-- 网络搜索功能 -->
-      <div class="web-search-section">
-        <div class="section-title">
-          <i class="fas fa-search-plus"></i> 网络搜索
-          <div class="toggle-switch">
-            <input type="checkbox" id="web-search-toggle" v-model="webSearchEnabled">
-            <label for="web-search-toggle"></label>
-          </div>
-        </div>
-        
-        <!-- 显示网络搜索状态信息 -->
-        <div class="web-search-info" v-if="webSearchEnabled">
-          <p v-if="availableSearchEngines.length === 0" class="no-engines-warning">
-            <i class="fas fa-exclamation-circle"></i> 
-            未配置搜索引擎API密钥，请联系管理员
-          </p>
-          
-          <div class="search-engine-list" v-else>
-            <p class="engine-label">可用搜索引擎:</p>
-            <div class="engine-badges">
-              <div 
-                v-for="engine in availableSearchEngines" 
-                :key="engine.id"
-                class="engine-badge"
-                :class="{ active: isEngineActive(engine.id) }"
-                @click="toggleSearchEngine(engine.id)"
-                :title="engine.description"
-              >
-                {{ engine.name }}
-              </div>
-            </div>
-          </div>
-          
-          <div class="web-search-tips">
-            <p><i class="fas fa-info-circle"></i> 开启后AI可访问最新互联网信息</p>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 深度思考功能区域 -->
-      <div class="deep-thinking-section">
-        <div class="section-title">
-          <i class="fas fa-brain"></i> 深度思考
-          <div class="toggle-switch">
-            <input type="checkbox" id="deep-thinking-toggle" v-model="deepThinkingEnabled">
-            <label for="deep-thinking-toggle"></label>
-          </div>
-        </div>
-        
-        <!-- 显示深度思考状态信息 -->
-        <div class="deep-thinking-info" v-if="deepThinkingEnabled">
-          <p><i class="fas fa-info-circle"></i> 开启后AI将展示思考过程</p>
-          <p class="deep-thinking-warning"><i class="fas fa-exclamation-triangle"></i> 注意：深度思考模式下响应时间可能稍长</p>
-        </div>
-      </div>
-      
-      <!-- 底部设置区域 -->
+      <!-- 网络搜索功能 - 从侧边栏移除，改到下拉菜单中 -->
       <div class="sidebar-footer">
         <button class="settings-button" @click="goToSettings">
           <i class="fas fa-cog"></i> 设置
@@ -235,21 +179,71 @@
         </div>
       </div>
       
-      <!-- 显示当前选中的知识库提示信息 -->
-      <div v-if="activeKnowledgeBaseId" class="knowledge-base-info">
-        <i class="fas fa-info-circle"></i>
-        <span>使用知识库：{{ getKnowledgeBaseName(activeKnowledgeBaseId) }}</span>
-      </div>
-      
       <!-- 输入区域 -->
       <div class="input-area">
         <div class="input-container">
-          <div v-if="webSearchEnabled" class="web-search-indicator">
-            <i class="fas fa-globe"></i> 网络搜索已开启
+          <!-- 添加功能菜单按钮 -->
+          <div class="features-dropdown">
+            <button class="features-button" @click.stop="toggleFeaturesMenu">
+              <i class="fas fa-sliders-h"></i>
+            </button>
+            
+            <!-- 下拉菜单内容 -->
+            <div class="dropdown-content" v-if="showFeaturesMenu">
+              <!-- 网络搜索选项 -->
+              <div class="dropdown-item">
+                <div class="item-label">
+                  <i class="fas fa-globe"></i>
+                  <span>网络搜索</span>
+                </div>
+                <div class="toggle-switch mini">
+                  <input type="checkbox" id="web-search-toggle-mini" v-model="webSearchEnabled">
+                  <label for="web-search-toggle-mini"></label>
+                </div>
+              </div>
+              
+              <!-- 深度思考选项 -->
+              <div class="dropdown-item">
+                <div class="item-label">
+                  <i class="fas fa-brain"></i>
+                  <span>深度思考</span>
+                </div>
+                <div class="toggle-switch mini">
+                  <input type="checkbox" id="deep-thinking-toggle-mini" v-model="deepThinkingEnabled">
+                  <label for="deep-thinking-toggle-mini"></label>
+                </div>
+              </div>
+              
+              <!-- 知识库选项 -->
+              <div class="dropdown-item knowledge-dropdown">
+                <div class="item-label">
+                  <i class="fas fa-book"></i>
+                  <span>知识库</span>
+                </div>
+                <select v-model="activeKnowledgeBaseId" class="knowledge-select">
+                  <option :value="null">默认知识</option>
+                  <option v-for="kb in knowledgeBases" :key="kb.id" :value="kb.id">
+                    {{ kb.name }}
+                  </option>
+                </select>
+              </div>
+            </div>
           </div>
-          <div v-if="deepThinkingEnabled" class="deep-thinking-indicator">
-            <i class="fas fa-brain"></i> 深度思考已开启
+          
+          <!-- 活跃功能指示器 -->
+          <div class="active-features" v-if="webSearchEnabled || deepThinkingEnabled || activeKnowledgeBaseId">
+            <div v-if="webSearchEnabled" class="feature-tag" title="网络搜索已开启">
+              <i class="fas fa-globe"></i>
+            </div>
+            <div v-if="deepThinkingEnabled" class="feature-tag" title="深度思考已开启">
+              <i class="fas fa-brain"></i>
+            </div>
+            <div v-if="activeKnowledgeBaseId" class="feature-tag" title="使用自定义知识库">
+              <i class="fas fa-book"></i>
+            </div>
           </div>
+          
+          <!-- 保留原有输入框 -->
           <textarea 
             v-model="userInput" 
             placeholder="输入你的问题..." 
@@ -259,6 +253,8 @@
             ref="inputField"
             @input="adjustTextareaHeight"
           ></textarea>
+          
+          <!-- 发送按钮 -->
           <button 
             class="send-button" 
             @click="sendMessage" 
@@ -270,20 +266,19 @@
         
         <!-- 更新底部提示信息 -->
         <div class="input-footer">
-          <p v-if="webSearchEnabled">
-            AI辅导员将使用网络搜索获取最新信息。搜索结果仅供参考，请验证重要信息的准确性。
+          <p v-if="webSearchEnabled || deepThinkingEnabled || activeKnowledgeBaseId">
+            <span v-if="webSearchEnabled">网络搜索开启 · </span>
+            <span v-if="deepThinkingEnabled">深度思考开启 · </span>
+            <span v-if="activeKnowledgeBaseId">使用知识库：{{ getKnowledgeBaseName(activeKnowledgeBaseId) }}</span>
           </p>
-          <p v-if="deepThinkingEnabled">
-            深度思考模式已开启，AI辅导员将展示其思考过程。
-          </p>
-          <p v-if="!webSearchEnabled && !deepThinkingEnabled">
+          <p v-else>
             AI辅导员正在进行内测阶段，回答仅供参考。请对照学校官方文件验证信息准确性。
           </p>
         </div>
       </div>
     </div>
 
-    <!-- 新的删除/重命名确认对话框 (Claude风格) -->
+    <!-- 删除/重命名确认对话框 -->
     <div class="claude-modal-overlay" v-if="showModal" @click.self="cancelModal">
       <div class="claude-modal-container">
         <h3 class="claude-modal-title">{{ modalType === 'delete' ? '删除对话？' : '重命名对话' }}</h3>
@@ -356,6 +351,8 @@ export default {
       searchEnginesLoaded: false,
       // 深度思考相关属性
       deepThinkingEnabled: false,
+      // 添加新属性
+      showFeaturesMenu: false, // 控制功能菜单的显示状态
     };
   },
   computed: {
@@ -435,8 +432,33 @@ export default {
     
     // 移除窗口大小监听器
     window.removeEventListener('resize', this.handleResize);
+    
+    // 移除功能菜单的文档点击监听器
+    document.removeEventListener('click', this.closeFeaturesMenu);
   },
   methods: {
+    // 切换功能菜单显示状态
+    toggleFeaturesMenu(event) {
+      if (event) event.stopPropagation();
+      this.showFeaturesMenu = !this.showFeaturesMenu;
+      
+      // 如果打开菜单，添加点击其他区域关闭菜单的事件
+      if (this.showFeaturesMenu) {
+        setTimeout(() => {
+          document.addEventListener('click', this.closeFeaturesMenu);
+        }, 0);
+      } else {
+        document.removeEventListener('click', this.closeFeaturesMenu);
+      }
+    },
+    
+    // 关闭功能菜单
+    closeFeaturesMenu(event) {
+      if (event && event.target.closest('.features-dropdown')) return;
+      this.showFeaturesMenu = false;
+      document.removeEventListener('click', this.closeFeaturesMenu);
+    },
+    
     // 切换思维链显示状态
     toggleReasoning(index) {
       this.messages[index].showReasoning = !this.messages[index].showReasoning;
@@ -450,6 +472,23 @@ export default {
     formatMessage(content) {
       // Markdown 基础格式转换
       const formatted = content
+        // 标题处理 (支持 h1-h6)
+        .replace(/^#{6}\s+(.*)$/gm, '<h6>$1</h6>')
+        .replace(/^#{5}\s+(.*)$/gm, '<h5>$1</h5>')
+        .replace(/^#{4}\s+(.*)$/gm, '<h4>$1</h4>')
+        .replace(/^#{3}\s+(.*)$/gm, '<h3>$1</h3>')
+        .replace(/^#{2}\s+(.*)$/gm, '<h2>$1</h2>')
+        .replace(/^#{1}\s+(.*)$/gm, '<h1>$1</h1>')
+        
+        // 分隔线处理
+        .replace(/^---$/gm, '<hr>')
+        
+        // 代码块处理
+        .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
+        
+        // 行内代码处理
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        
         // 加粗处理
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         // 斜体处理
@@ -1593,6 +1632,49 @@ export default {
   font-size: 0.95rem;
 }
 
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+  margin: 1em 0 0.5em 0;
+  font-weight: bold;
+}
+
+.message-content h1 { font-size: 1.8em; }
+.message-content h2 { font-size: 1.5em; }
+.message-content h3 { font-size: 1.3em; }
+.message-content h4 { font-size: 1.1em; }
+.message-content h5 { font-size: 0.9em; }
+.message-content h6 { font-size: 0.8em; }
+
+.message-content hr {
+  border: none;
+  border-top: 1px solid #e0e0e0;
+  margin: 1em 0;
+}
+
+.message-content code {
+  background-color: #f4f4f4;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+.message-content pre {
+  background-color: #f4f4f4;
+  padding: 1em;
+  border-radius: 5px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.message-content pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
 /* 输入区域样式 */
 .input-area {
   padding: 1rem;
@@ -1606,7 +1688,7 @@ export default {
   border-radius: 24px;
   padding: 8px 16px;
   position: relative;
-  margin-top: 25px; /* 为指示器腾出空间 */
+  align-items: center;
 }
 
 textarea {
@@ -1620,6 +1702,7 @@ textarea {
   font-size: 0.95rem;
   max-height: 120px;
   overflow-y: auto;
+  margin: 0 8px;
 }
 
 .send-button {
@@ -1633,7 +1716,6 @@ textarea {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  margin-left: 8px;
   transition: all 0.2s;
 }
 
@@ -1651,6 +1733,11 @@ textarea {
   font-size: 0.75rem;
   color: #666;
   text-align: center;
+}
+
+.input-footer p {
+  margin: 4px 0;
+  line-height: 1.4;
 }
 
 /* Claude 风格模态框 */
@@ -1861,177 +1948,6 @@ textarea {
   transform: translateY(-2px);
 }
 
-/* 网络搜索样式 */
-.web-search-section {
-  padding: 1rem;
-  border-bottom: 1px solid #e0e0e0;
-  background-color: #f8f9fa;
-}
-
-.toggle-switch {
-  position: relative;
-  display: inline-block;
-  width: 46px;
-  height: 24px;
-}
-
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-switch label {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #ccc;
-  transition: 0.4s;
-  border-radius: 24px;
-}
-
-.toggle-switch label:before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 3px;
-  bottom: 3px;
-  background-color: white;
-  transition: 0.3s;
-  border-radius: 50%;
-}
-
-.toggle-switch input:checked + label {
-  background-color: #5E35B1;
-}
-
-.toggle-switch input:checked + label:before {
-  transform: translateX(22px);
-}
-
-.web-search-info {
-  margin-top: 1rem;
-  font-size: 0.9rem;
-  color: #555;
-}
-
-.no-engines-warning {
-  color: #e65100;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  padding: 8px 12px;
-  background-color: #fff3e0;
-  border-radius: 6px;
-  margin: 0.5rem 0;
-}
-
-.engine-label {
-  margin-bottom: 0.5rem;
-  font-size: 0.85rem;
-  color: #666;
-}
-
-.engine-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 0.5rem;
-}
-
-.engine-badge {
-  background-color: #f0f0f0;
-  border: 1px solid #ddd;
-  padding: 4px 12px;
-  border-radius: 14px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.engine-badge:hover {
-  background-color: #e0e0e0;
-}
-
-.engine-badge.active {
-  background-color: #5E35B1;
-  color: white;
-  border-color: #4527A0;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.web-search-tips {
-  font-size: 0.8rem;
-  color: #666;
-  padding: 0.5rem 0;
-  border-top: 1px dashed #e0e0e0;
-  margin-top: 0.5rem;
-}
-
-.web-search-tips p {
-  margin: 0.25rem 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.web-search-indicator {
-  position: absolute;
-  top: -25px;
-  left: 16px;
-  background-color: #e8f5e9;
-  color: #2e7d32;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
-/* 深度思考样式 */
-.deep-thinking-section {
-  padding: 1rem;
-  border-bottom: 1px solid #e0e0e0;
-  background-color: #f8f9fa;
-}
-
-.deep-thinking-info {
-  margin-top: 1rem;
-  font-size: 0.9rem;
-  color: #555;
-}
-
-.deep-thinking-warning {
-  color: #e65100;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 0.5rem;
-}
-
-.deep-thinking-indicator {
-  position: absolute;
-  top: -25px;
-  left: 140px; /* 在网络搜索指示器右侧 */
-  background-color: #e1f5fe;
-  color: #0288d1;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-
 /* 思维链样式 */
 .reasoning-content {
   margin-bottom: 12px;
@@ -2066,10 +1982,215 @@ textarea {
   border-top: 1px solid #e0e0e0;
 }
 
+/* 功能下拉菜单样式 - 新增 */
+.features-dropdown {
+  position: relative;
+  margin-right: 8px;
+}
+
+.features-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #f0f0f0;
+  color: #555;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.features-button:hover {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.dropdown-content {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  width: 240px;
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 10px;
+  z-index: 20;
+  margin-bottom: 10px;
+  animation: fadeIn 0.2s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 下拉箭头指示 */
+.dropdown-content:after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 15px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid white;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.item-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.item-label i {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.8rem;
+}
+
+.item-label i.fa-globe {
+  color: #2e7d32;
+  background-color: #e8f5e9;
+}
+
+.item-label i.fa-brain {
+  color: #0288d1;
+  background-color: #e1f5fe;
+}
+
+.item-label i.fa-book {
+  color: #5E35B1;
+  background-color: #f3e5f5;
+}
+
+/* 小型开关样式 */
+.toggle-switch.mini {
+  width: 40px;
+  height: 20px;
+}
+
+.toggle-switch.mini label:before {
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+}
+
+.toggle-switch.mini input:checked + label:before {
+  transform: translateX(20px);
+}
+
+/* 知识库下拉选择框 */
+.knowledge-select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 0.85rem;
+  outline: none;
+  background-color: #f5f5f5;
+  flex: 1;
+  margin-left: 10px;
+}
+
+.knowledge-select:focus {
+  border-color: #5E35B1;
+}
+
+/* 活跃功能指示器 */
+.active-features {
+  display: flex;
+  gap: 6px;
+  margin-right: 6px;
+}
+
+.feature-tag {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  position: relative;
+}
+
+.feature-tag:hover:after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  margin-bottom: 5px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.feature-tag i.fa-globe {
+  color: #2e7d32;
+}
+
+.feature-tag i.fa-brain {
+  color: #0288d1;
+}
+
+.feature-tag i.fa-book {
+  color: #5E35B1;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
   .chat-container {
     max-width: 100%; /* 在小屏幕上占据全部宽度 */
+  }
+
+  .input-container {
+    flex-wrap: wrap;
+  }
+  
+  .features-dropdown {
+    order: 1;
+  }
+  
+  .active-features {
+    order: 2;
+    margin-right: 0;
+  }
+  
+  textarea {
+    order: 3;
+    width: 100%;
+    margin: 8px 0;
+  }
+  
+  .send-button {
+    order: 4;
   }
 }
 </style>
