@@ -201,6 +201,29 @@
                   <label for="web-search-toggle-mini"></label>
                 </div>
               </div>
+
+              <!-- 网络搜索引擎选择 (仅在网络搜索开启时显示) -->
+              <div class="dropdown-item search-engines-item" v-if="webSearchEnabled && availableSearchEngines.length > 0">
+                <div class="item-label">
+                  <i class="fas fa-search-plus"></i>
+                  <span>选择搜索引擎</span>
+                </div>
+              </div>
+              <div class="search-engine-list" v-if="webSearchEnabled && availableSearchEngines.length > 0">
+                <div 
+                  v-for="engine in availableSearchEngines" 
+                  :key="engine.id"
+                  class="engine-badge"
+                  :class="{ active: isEngineActive(engine.id) }"
+                  @click.stop="toggleSearchEngine(engine.id)"
+                  :title="engine.description"
+                >
+                  {{ engine.name }}
+                </div>
+                <div class="search-engine-tip" v-if="availableSearchEngines.length === 0">
+                  <i class="fas fa-exclamation-circle"></i> 未配置搜索引擎
+                </div>
+              </div>
               
               <!-- 深度思考选项 -->
               <div class="dropdown-item">
@@ -320,6 +343,8 @@
 import axios from '@/api/axiosForAssistant';
 import advisorApi from '@/services/advisor'; 
 import { inject, watch } from 'vue'
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 export default {
   name: 'AdvisorPage',
@@ -372,6 +397,14 @@ export default {
     return {
       updateAdvisorChatTitle
     }
+  },
+  updated() {
+    // 获取所有消息内容元素
+    const messageElements = document.querySelectorAll('.message-content');
+    // 对每个元素渲染数学公式
+    messageElements.forEach(element => {
+      this.renderMathInMessage(element);
+    });
   },
   watch: {
       currentChatTitle: {
@@ -470,8 +503,65 @@ export default {
 
     // 格式化消息内容
     formatMessage(content) {
-      // Markdown 基础格式转换
-      const formatted = content
+      if (!content) return '';
+      
+      // 步骤1: 在HTML转义前提取数学部分
+      let mathSections = [];
+      let processedContent = content;
+      let mathCounter = 0;
+      
+      // 创建一个函数来处理所有类型的公式，避免代码重复
+      function extractMath(text, pattern, isBlock) {
+        return text.replace(pattern, (match, formula) => {
+          const id = `math-${isBlock ? 'block' : 'inline'}-${mathCounter++}`;
+          // 移除公式中可能存在的<br>和其他HTML标签文本
+          const cleanFormula = formula
+            .replace(/< *br *>/g, '') // 移除<br>文本
+            .replace(/< *\/ *div *>/g, '') // 移除</div>文本
+            .replace(/< *divclass *= *[^>]*>/g, '') // 移除<divclass=...>文本
+            .replace(/< *strong *>/g, '') // 移除<strong>文本
+            .replace(/< *\/ *strong *>/g, '') // 移除</strong>文本
+            .replace(/< *h4 *>/g, '') // 移除<h4>文本
+            .replace(/< *\/ *h4 *>/g, '') // 移除</h4>文本
+            .replace(/(< *br *>|&lt;br *&gt;)/gi, '') // 增强匹配不同形式的 br
+            .replace(/<\/?[a-z][^>]*>/gi, '') // 移除所有 HTML 标签
+            .replace(/&[a-z]+;/g, ''); // 移除 HTML 实体
+            
+            mathSections.push({ id, formula: cleanFormula, isBlock });
+          return `{{${id}}}`;
+        });
+      }
+      
+      // 处理所有类型的数学公式
+      processedContent = extractMath(processedContent, /\$\$([\s\S]+?)\$\$/g, true); // 块级公式 $$...$$
+      processedContent = extractMath(processedContent, /\$([^\$]+?)\$/g, false); // 行内公式 $...$
+      processedContent = extractMath(processedContent, /\\\(([\s\S]+?)\\\)/g, false); // 行内公式 \(...\)
+      processedContent = extractMath(processedContent, /\\\[([\s\S]+?)\\\]/g, true); // 块级公式 \[...\]
+      
+      // 步骤2: 进行常规的HTML转义以防止注入
+      processedContent = processedContent
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      // 步骤3: 处理特定的HTML标签
+      processedContent = processedContent.replace(/&lt;\s*divclass\s*=\s*(.*?)&gt;/g, '<div class="$1">');
+      processedContent = processedContent.replace(/&lt;\s*\/\s*divclass\s*&gt;/g, '</div>');
+      processedContent = processedContent.replace(/&lt;br\s*&gt;/g, '<br>');
+      processedContent = processedContent.replace(/&lt;h4&gt;(.*?)&lt;\/h4&gt;/g, '<h4>$1</h4>');
+      
+      // 步骤4: 恢复提取出的数学公式部分
+      mathSections.forEach(section => {
+        processedContent = processedContent.replace(
+          `{{${section.id}}}`,
+          section.isBlock 
+            ? `<div class="math-block" data-math="${section.formula}"></div>` 
+            : `<span class="math-inline" data-math="${section.formula}"></span>`
+        );
+      });
+      
+      // 步骤5: 应用Markdown格式转换
+      processedContent = processedContent
         // 标题处理 (支持 h1-h6)
         .replace(/^#{6}\s+(.*)$/gm, '<h6>$1</h6>')
         .replace(/^#{5}\s+(.*)$/gm, '<h5>$1</h5>')
@@ -495,15 +585,79 @@ export default {
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         // 链接处理
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+        
+        // 保护数学公式中的减号，防止被误认为是无序列表
         // 数字列表处理
         .replace(/(\d+\.\s+.*(?:\n|$))/g, '<div class="list-item">$1</div>')
-        // 无序列表处理
-        .replace(/(\-\s+.*(?:\n|$))/g, '<div class="list-item bullet">$1</div>')
-        // 换行处理
-        .replace(/\n/g, '<br>');
-      
+        
+        // 无序列表处理 - 修改正则表达式，确保只有行首的减号被处理为列表项
+        .replace(/^(\-\s+.*(?:\n|$))/gm, '<div class="list-item bullet">$1</div>') 
+        
+        // 换行处理 - 需要小心这部分，可能影响公式中的换行
+        .replace(/\n/g, (match, offset) => {
+          // 检查是否在数学公式占位符区域内
+          const isInMath = /{{math-(block|inline)-\d+}}/.test(
+            processedContent.slice(0, offset)
+          );
+          return isInMath ? '\n' : '<br>';
+        });
       // 二次处理列表项的换行
-      return formatted.replace(/<br><div class="list-item">/g, '<div class="list-item">');
+      processedContent = processedContent.replace(/<br><div class="list-item">/g, '<div class="list-item">');
+      
+      // 处理特殊的数学表示法
+      processedContent = processedContent.replace(/≈/g, '&approx;');
+      processedContent = processedContent.replace(/当x=([0-9.]+)/g, '当 x = $1');
+      
+      return processedContent;
+    },
+
+    // 渲染数学公式
+    renderMathInMessage(messageElement) {
+      if (!messageElement) return;
+      
+      try {
+        // 渲染行内公式
+        const inlineElements = messageElement.querySelectorAll('.math-inline');
+        inlineElements.forEach(element => {
+          try {
+            const math = element.getAttribute('data-math');
+            if (math) {
+              katex.render(math, element, {
+                throwOnError: false,
+                displayMode: false,
+                output: 'html',
+                trust: true  // 允许某些高级功能
+              });
+            }
+          } catch (error) {
+            console.error('渲染行内公式出错:', error);
+            // 出错时显示原始LaTeX代码
+            element.textContent = '$' + (element.getAttribute('data-math') || '') + '$';
+          }
+        });
+        
+        // 渲染块级公式
+        const blockElements = messageElement.querySelectorAll('.math-block');
+        blockElements.forEach(element => {
+          try {
+            const math = element.getAttribute('data-math');
+            if (math) {
+              katex.render(math, element, {
+                throwOnError: false,
+                displayMode: true,
+                output: 'html',
+                trust: true  // 允许某些高级功能
+              });
+            }
+          } catch (error) {
+            console.error('渲染块级公式出错:', error, element.getAttribute('data-math'));
+            // 出错时显示原始LaTeX代码
+            element.textContent = '$$' + (element.getAttribute('data-math') || '') + '$$';
+          }
+        });
+      } catch (e) {
+        console.error('渲染数学公式时发生错误:', e);
+      }
     },
     
     // 调整文本输入框高度
@@ -589,12 +743,17 @@ export default {
             isLoading: false
           });
         })
-        .finally(() => {
-          this.loading = false;
-          this.$nextTick(() => {
-            this.scrollToBottom();
+      .finally(() => {
+        this.loading = false;
+        this.$nextTick(() => {
+          this.scrollToBottom();
+          // 渲染新消息中的数学公式
+          const messageElements = document.querySelectorAll('.message-content');
+          messageElements.forEach(element => {
+            this.renderMathInMessage(element);
           });
         });
+      });
     },
     
     // 流式请求方法
@@ -1638,7 +1797,7 @@ export default {
 .message-content h4,
 .message-content h5,
 .message-content h6 {
-  margin: 1em 0 0.5em 0;
+  margin: 0.3em 0 0.1em 0;
   font-weight: bold;
 }
 
@@ -1652,7 +1811,7 @@ export default {
 .message-content hr {
   border: none;
   border-top: 1px solid #e0e0e0;
-  margin: 1em 0;
+  margin: 0.2em 0;
 }
 
 .message-content code {
@@ -2192,5 +2351,70 @@ textarea {
   .send-button {
     order: 4;
   }
+}
+
+/* 搜索引擎列表样式 */
+.search-engines-item {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-top: 4px;
+}
+
+.search-engine-list {
+  padding: 0 12px 12px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.engine-badge {
+  background-color: #f0f0f0;
+  border: 1px solid #ddd;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.engine-badge:hover {
+  background-color: #e0e0e0;
+}
+
+.engine-badge.active {
+  background-color: #5E35B1;
+  color: white;
+  border-color: #4527A0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.search-engine-tip {
+  font-size: 0.8rem;
+  color: #e65100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+/* 数学公式样式 */
+.math-block {
+  display: block;
+  overflow-x: auto;
+  margin: 1em 0;
+  text-align: center;
+}
+
+.math-inline {
+  white-space: pre-wrap !important;
+  overflow-wrap: normal !important;
+}
+
+/* 确保KaTeX渲染的公式可以在小屏幕上水平滚动 */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0.5em 0 !important;
 }
 </style>
