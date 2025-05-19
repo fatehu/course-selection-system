@@ -3,8 +3,8 @@ import axios from 'axios';
 
 // 专用于AI辅导员的axios实例，超时时间更长
 const advisorApi = axios.create({
-  baseURL: 'http://localhost:3000/api',
-  timeout: 60000,  // 设置为60秒，远高于普通请求
+  baseURL: process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:3000/api',
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }

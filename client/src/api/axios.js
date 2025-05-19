@@ -2,7 +2,8 @@ import axios from 'axios';
 
 // 创建 axios 实例
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  // 生产环境使用相对路径，开发环境使用localhost
+  baseURL: process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:3000/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
