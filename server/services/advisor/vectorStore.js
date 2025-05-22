@@ -6,7 +6,7 @@ class EnhancedVectorStore {
     this.documents = [];
     this.embeddings = [];
     this.deletedDocuments = new Set(); // 记录已删除的文档ID
-    this.fileDocumentMap = new Map(); // 新增：文件ID到文档ID的映射
+    this.fileDocumentMap = new Map(); // 文件ID到文档ID的映射
     this.storePath = options.storePath || path.join(process.cwd(), 'data/vector-store.json');
   }
   

@@ -4,7 +4,7 @@
     <div class="sidebar" :class="{ 'visible': sidebarVisible }">
       <div class="sidebar-header">
         <h1 class="app-title">AI学习辅导员</h1>
-        <button class="new-chat-button" @click="createNewChat">
+        <button class="new-chat-button" @click="createNewChat" :disabled="loading">
           <i class="fas fa-plus"></i> 新建对话
         </button>
         <!-- Add close sidebar button inside sidebar -->
@@ -21,7 +21,7 @@
         <div class="history-list">
           <div class="history-item" 
                :class="{ active: !currentChatId }"
-               @click="createNewChat">
+               @click="loading ? null : createNewChat">
             <div class="history-item-title">新建对话</div>
           </div>
           
@@ -30,23 +30,24 @@
           </div>
           
           <!-- 在历史对话列表中 -->
-          <div v-for="chat in chatHistory" 
-              :key="chat.id" 
+          <div v-for="chat in chatHistory"
+              :key="chat.id"
               class="history-item"
-              :class="{ active: currentChatId === chat.id }">
-            
-            <div class="history-item-content" @click="switchChat(chat.id)">
+              :class="{
+                active: currentChatId === chat.id,
+                'disabled-item': loading && currentChatId !== chat.id
+              }">
+
+            <div class="history-item-content"
+                @click="(loading && currentChatId !== chat.id) ? null : switchChat(chat.id)">
               <div class="history-item-title">{{ chat.title || '未命名对话' }}</div>
               <div class="history-item-date">{{ formatDate(chat.updatedAt) }}</div>
             </div>
-            
-            <!-- 三点菜单按钮 -->
-            <div class="history-item-actions">
+
+            <div class="history-item-actions" v-if="!(loading && currentChatId !== chat.id)">
               <div class="more-actions" @click.stop="showActionMenu(chat, $event)">
                 <i class="fas fa-ellipsis-v"></i>
               </div>
-              
-              <!-- 下拉菜单 -->
               <div v-if="activeMenu === chat.id" class="action-menu">
                 <div class="action-item" @click.stop="showRenameConfirm(chat)">
                   <i class="fas fa-edit"></i> 重命名
@@ -54,6 +55,11 @@
                 <div class="action-item delete-action" @click.stop="showDeleteConfirm(chat)">
                   <i class="fas fa-trash-alt"></i> 删除
                 </div>
+              </div>
+            </div>
+            <div class="history-item-actions" v-else>
+              <div class="more-actions disabled-item">
+                  <i class="fas fa-ellipsis-v"></i>
               </div>
             </div>
           </div>

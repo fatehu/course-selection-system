@@ -42,11 +42,10 @@ class DeepSeekService {
         { role: "system", content: systemPrompt }
       ];
       
-      // 添加对话历史
+      // 添加对话历史 - 移除了硬编码的10条限制
       if (conversationHistory && conversationHistory.length > 0) {
-        // 只取最近的10条消息，避免超出token限制
-        const recentHistory = conversationHistory.slice(-10);
-        recentHistory.forEach(msg => {
+        // 使用所有传入的历史消息
+        conversationHistory.forEach(msg => {
           messages.push({
             role: msg.role === 'user' ? 'user' : 'assistant',
             content: msg.content
@@ -97,7 +96,7 @@ class DeepSeekService {
         { role: "system", content: systemPrompt }
       ];
       
-      // 更可靠的历史处理：只使用完整的用户-助手对话对
+      // 使用完整的用户-助手对话对
       if (conversationHistory && conversationHistory.length >= 2) {
         // 收集完整的用户-助手对话对
         let userAssistantPairs = [];
@@ -113,9 +112,8 @@ class DeepSeekService {
           }
         }
         
-        // 只使用最近的对话对（最多2对，保持上下文理解同时避免过长）
-        const usePairCount = Math.min(2, userAssistantPairs.length);
-        const recentPairs = userAssistantPairs.slice(-usePairCount);
+        // 使用所有对话对，不再限制为最多2对
+        const recentPairs = userAssistantPairs;
         
         // 添加完整的对话对到消息中
         for (const pair of recentPairs) {
@@ -239,9 +237,8 @@ class DeepSeekService {
       
       // 添加对话历史
       if (conversationHistory && conversationHistory.length > 0) {
-        // 只取最近的10条消息，避免超出token限制
-        const recentHistory = conversationHistory.slice(-10);
-        recentHistory.forEach(msg => {
+        // 使用所有传入的历史消息
+        conversationHistory.forEach(msg => {
           messages.push({
             role: msg.role === 'user' ? 'user' : 'assistant',
             content: msg.content
