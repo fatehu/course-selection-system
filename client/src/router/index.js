@@ -4,7 +4,8 @@ import { useUserStore } from '../store/userStore'
 import KnowledgeBaseManager from '@/components/KnowledgeBaseManager.vue';
 import KnowledgeBaseDetail from '@/components/KnowledgeBaseDetail.vue';
 import KnowledgeBaseTest from '@/components/KnowledgeBaseTest.vue';
-
+// 导入默认知识库管理页面组件
+import AdvisorAdmin from '@/views/AdvisorAdmin.vue'
 const routes = [
   {
     path: '/',
@@ -174,6 +175,16 @@ const routes = [
     component: () => import('../views/AdvisorSettings.vue'),
     meta: {
       requiresAuth: true
+    }
+  },
+  // 默认知识库管理页面
+  {
+    path: '/advisor/admin',
+    name: 'AdvisorAdmin', 
+    component: AdvisorAdmin,
+    meta: { 
+      requiresAuth: true,
+      requiresAdmin: true // 需要管理员权限
     }
   },
   {

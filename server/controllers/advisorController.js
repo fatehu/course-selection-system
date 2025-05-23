@@ -381,6 +381,64 @@ const searchWeb = async (req, res) => {
   }
 };
 
+// 重建默认知识库
+const rebuildDefaultKnowledgeBase = async (req, res) => {
+  try {
+    console.log(`管理员 ${req.user.id} 请求重建默认知识库`);
+    
+    const result = await advisorService.rebuildDefaultKnowledgeBase();
+    
+    res.json({
+      success: true,
+      message: "默认知识库重建成功",
+      data: result
+    });
+  } catch (error) {
+    console.error("重建默认知识库失败:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "重建失败"
+    });
+  }
+};
+
+// 检查默认知识库状态
+const checkDefaultKnowledgeBase = async (req, res) => {
+  try {
+    const status = await advisorService.checkDefaultKnowledgeBaseStatus();
+    
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error("检查默认知识库状态失败:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "检查失败"
+    });
+  }
+};
+
+// 清理处理缓存
+const clearProcessingCache = async (req, res) => {
+  try {
+    const result = await advisorService.clearProcessingCache();
+    
+    res.json({
+      success: true,
+      message: "缓存清理成功",
+      data: result
+    });
+  } catch (error) {
+    console.error("清理缓存失败:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "清理失败"
+    });
+  }
+};
+
 module.exports = {
   askQuestion,
   askQuestionStream,
@@ -391,5 +449,8 @@ module.exports = {
   generateTitle,
   getSearchEngines,
   setActiveEngines,
-  searchWeb
+  searchWeb,
+  rebuildDefaultKnowledgeBase,
+  checkDefaultKnowledgeBase,
+  clearProcessingCache
 };

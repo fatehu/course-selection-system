@@ -122,5 +122,35 @@ export default {
    */
   searchWeb(query, limit = 10) {
     return axios.post(`${API_PATH}/search/web`, { query, limit });
+  },
+
+  // ============ 管理员专用接口 ============
+  
+  /**
+   * 检查默认知识库状态
+   * @returns {Promise} - 返回知识库状态信息
+   */
+  checkDefaultKnowledgeBaseStatus() {
+    return axios.get(`${API_PATH}/admin/knowledge-base/status`);
+  },
+
+  /**
+   * 重建默认知识库
+   * @param {boolean} clearEmbeddingCache - 是否清理嵌入缓存
+   * @returns {Promise} - 返回重建结果
+   */
+  rebuildDefaultKnowledgeBase(clearEmbeddingCache = false) {
+    return axios.post(`${API_PATH}/admin/knowledge-base/rebuild`, { 
+      clearEmbeddingCache 
+    });
+  },
+
+  /**
+   * 清理处理缓存
+   * @returns {Promise} - 返回清理结果
+   */
+  clearProcessingCache() {
+    return axios.post(`${API_PATH}/admin/cache/clear`);
   }
+
 };

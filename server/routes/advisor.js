@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const advisorController = require('../controllers/advisorController');
 const advisorSettingsController = require('../controllers/advisorSettingsController');
-const { verifyToken } = require('../middleware/authMiddleware');
+const { verifyToken , checkRole} = require('../middleware/authMiddleware');
 
 // 所有路由都需要验证token
 router.use(verifyToken);
@@ -18,7 +18,10 @@ const {
   generateTitle,
   getSearchEngines,
   setActiveEngines,
-  searchWeb
+  searchWeb,
+  rebuildDefaultKnowledgeBase,
+  checkDefaultKnowledgeBase,
+  clearProcessingCache
 } = advisorController;
 
 // AI辅导员问答接口
@@ -55,5 +58,10 @@ router.post('/search/web', searchWeb);
 router.get('/settings', advisorSettingsController.getSettings);
 router.post('/settings', advisorSettingsController.saveSettings);
 router.delete('/settings', advisorSettingsController.resetSettings);
+
+// 管理默认知识库相关路由
+router.get('/admin/knowledge-base/status',checkRole(['admin']), checkDefaultKnowledgeBase);
+router.post('/admin/knowledge-base/rebuild',checkRole(['admin']), rebuildDefaultKnowledgeBase);
+router.post('/admin/cache/clear',checkRole(['admin']), clearProcessingCache);
 
 module.exports = router;

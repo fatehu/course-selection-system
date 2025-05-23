@@ -59,10 +59,16 @@
               <span>个人信息</span>
             </el-menu-item>
 
-            <!-- 新增AI辅导员菜单项 -->
+            <!-- AI辅导员菜单项 -->
             <el-menu-item index="/advisor">
               <el-icon><ChatDotRound /></el-icon>
               <span>AI辅导员</span>
+            </el-menu-item>
+
+            <!-- 管理员专用：默认知识库管理 -->
+            <el-menu-item v-if="isAdmin" index="/advisor/admin" class="admin-menu-item">
+              <el-icon><Tools /></el-icon>
+              <span>默认知识库管理</span>
             </el-menu-item>
           </el-menu>
         </el-aside>
@@ -79,6 +85,11 @@
               <div v-if="isAdvisorPage" class="advisor-chat-title">
                 <el-icon><ChatDotRound /></el-icon>
                 <span>{{ advisorCurrentChatTitle || 'AI辅导员' }}</span>
+              </div>
+                <!-- 当在默认知识库管理页面时显示标题 -->
+              <div v-if="isAdvisorAdminPage" class="admin-page-title">
+                <el-icon><Tools /></el-icon>
+                <span>默认知识库管理</span>
               </div>
             </div>
 
@@ -133,7 +144,7 @@ import {
   Promotion,
   ArrowDown,
   ChatDotRound,
-
+  Tools,
 } from '@element-plus/icons-vue'
 import AdvisorChat from '@/components/AdvisorChat.vue'
 
@@ -150,6 +161,7 @@ export default {
     AdvisorChat,
     Promotion,
     ChatDotRound,
+    Tools,
   },
   setup() {
     const route = useRoute()
@@ -338,4 +350,36 @@ body {
 .fade-leave-to {
   opacity: 0;
 }
+
+/* 管理页面标题样式 */
+.admin-page-title {
+  display: flex;
+  align-items: center;
+  margin-left: 15px;
+  font-weight: 500;
+  color: #E65100;
+}
+
+.admin-page-title .el-icon {
+  margin-right: 8px;
+  font-size: 18px;
+}
+
+/* 管理员菜单项特殊样式 */
+.admin-menu-item {
+  position: relative;
+}
+
+/* .admin-menu-item::after {
+  content: "管理员";
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #E65100;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 8px;
+} */
 </style>

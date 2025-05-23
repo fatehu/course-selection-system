@@ -56,7 +56,7 @@ class AdvisorService {
         }
         
         // 处理PDF文件
-        const allChunks = await this.documentProcessor.processMultiplePDFs(this.pdfPaths);
+        const allChunks = await this.documentProcessor.processMultipleFiles(this.pdfPaths);
         console.log(`成功处理${allChunks.length}个文本块`);
         
         // 生成嵌入向量
@@ -485,6 +485,92 @@ class AdvisorService {
     } catch (error) {
       console.error("生成评价总结失败:", error.message);
       throw new Error(`生成评价总结失败: ${error.message}`);
+    }
+  }
+
+  // 强制重建默认知识库
+  async rebuildDefaultKnowledgeBase() {
+    console.log("开始重建默认知识库...");
+    
+    try {
+      // 清空现有向量存储
+      this.vectorStore = new VectorStore({ storePath: this.vectorStorePath });
+      
+      // 检查PDF文件是否存在
+      const pdfExists = this.pdfPaths.some(pdfPath => fs.existsSync(pdfPath));
+      if (!pdfExists) {
+        throw new Error("找不到必要的PDF文件，请确保培养方案和学生手册PDF已放置在正确位置");
+      }
+      
+      console.log("重新处理PDF文件...");
+      // 重新处理PDF文件
+      const allChunks = await this.documentProcessor.processMultipleFiles(this.pdfPaths);
+      console.log(`重新处理了${allChunks.length}个文本块`);
+      
+      // 重新生成嵌入向量
+      console.log("重新生成嵌入向量...");
+      const contentsOnly = allChunks.map(chunk => chunk.content);
+      const embeddings = await this.embeddingService.getBatchEmbeddings(contentsOnly);
+      
+      // 添加到向量存储
+      console.log("重新构建向量索引...");
+      this.vectorStore.addDocuments(allChunks, embeddings);
+      
+      // 保存向量存储
+      this.vectorStore.save();
+      
+      console.log("默认知识库重建完成");
+      return { success: true, message: "默认知识库重建成功", chunksCount: allChunks.length };
+    } catch (error) {
+      console.error("重建默认知识库失败:", error);
+      throw error;
+    }
+  }
+
+  // 检查默认知识库状态
+  async checkDefaultKnowledgeBaseStatus() {
+    try {
+      const stats = this.vectorStore.getStats();
+      const pdfFiles = this.pdfPaths.map(pdfPath => ({
+        path: pdfPath,
+        exists: fs.existsSync(pdfPath),
+        size: fs.existsSync(pdfPath) ? fs.statSync(pdfPath).size : 0,
+        modified: fs.existsSync(pdfPath) ? fs.statSync(pdfPath).mtime : null
+      }));
+      
+      return {
+        vectorStore: stats,
+        pdfFiles: pdfFiles,
+        needsRebuild: stats.totalDocuments === 0 || stats.activeDocuments === 0
+      };
+    } catch (error) {
+      console.error("检查默认知识库状态失败:", error);
+      return {
+        vectorStore: null,
+        pdfFiles: [],
+        needsRebuild: true,
+        error: error.message
+      };
+    }
+  }
+
+  // 清理缓存
+  async clearProcessingCache() {
+    try {
+      // 清理文档处理缓存
+      await this.documentProcessor.cleanupUnusedCache();
+      
+      // 清理嵌入缓存（如果需要完全重建）
+      const cacheFile = path.join(this.embeddingService.cacheDir, 'embedding-cache.json');
+      if (fs.existsSync(cacheFile)) {
+        await fs.remove(cacheFile);
+        console.log("已清理嵌入缓存");
+      }
+      
+      return { success: true, message: "缓存清理完成" };
+    } catch (error) {
+      console.error("清理缓存失败:", error);
+      throw error;
     }
   }
 }

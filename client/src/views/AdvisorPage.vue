@@ -66,7 +66,7 @@
         </div>
       </div>
       
-      <!-- 知识库区域 - 修改为支持选择知识库 -->
+      <!-- 知识库区域 -->
       <div class="knowledge-section">
         <div class="section-title">
           <i class="fas fa-book"></i> 知识库
