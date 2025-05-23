@@ -124,8 +124,8 @@
 
       <div v-else-if="!summary" class="empty-placeholder">暂无评价总结</div>
 
-      <div v-else class="summary-content">
-        <p v-html="summary"></p>
+      <div v-else class="summary-content markdown-content">
+        <div v-html="summary"></div>
       </div>
 
       <el-divider></el-divider>
@@ -141,7 +141,7 @@ import { useCourseStore } from '../store/courseStore'
 import { useSectionStore } from '../store/sectionStore'
 import { useEnrollmentStore } from '../store/enrollmentStore'
 import { useUserStore } from '../store/userStore'
-import { useReviewStore } from '../store/reviewStore' // 新增的评价 store
+import { useReviewStore } from '../store/reviewStore'
 import dayjs from 'dayjs'
 
 export default {
@@ -153,11 +153,11 @@ export default {
     const sectionStore = useSectionStore()
     const enrollmentStore = useEnrollmentStore()
     const userStore = useUserStore()
-    const reviewStore = useReviewStore() // 使用评价 store
+    const reviewStore = useReviewStore()
 
     const loading = ref(true)
     const loadingSections = ref(true)
-    const loadingReviews = ref(true) // 新增的评价加载状态
+    const loadingReviews = ref(true)
     const loadingSummary = ref(true)
     const summary = ref('')
     const courseId = route.params.id
@@ -180,7 +180,7 @@ export default {
     const sections = ref([])
 
     // 课程评价列表
-    const reviews = computed(() => reviewStore.reviews) // 使用评价 store 中的评价列表
+    const reviews = computed(() => reviewStore.reviews)
 
     // 新建评价
     const newReview = ref({
@@ -188,6 +188,85 @@ export default {
       course_id: courseId,
       user_id: userId.value,
     })
+
+    // Markdown处理函数
+    const processMarkdown = (content) => {
+      if (!content) return ''
+      
+      // 先清理重复的编号（如 "1. 1." -> "1."）
+      let cleanedContent = content
+        .replace(/^(\d+)\.\s+\1\.\s+/gm, '$1. ')  // 处理 "1. 1. " -> "1. "
+        .replace(/^(\d+)\.\s+(\d+)\.\s+/gm, '$1. ') // 处理 "1. 2. " -> "1. "
+      
+      return cleanedContent
+        // 处理标题（从最长的开始，避免误匹配）
+        .replace(/^##### (.*$)/gim, '<h5 class="md-h5">$1</h5>')
+        .replace(/^#### (.*$)/gim, '<h4 class="md-h4">$1</h4>')
+        .replace(/^### (.*$)/gim, '<h3 class="md-h3">$1</h3>')
+        .replace(/^## (.*$)/gim, '<h2 class="md-h2">$1</h2>')
+        .replace(/^# (.*$)/gim, '<h1 class="md-h1">$1</h1>')
+        
+        // 处理粗体和斜体
+        .replace(/\*\*(.*?)\*\*/gim, '<strong class="md-strong">$1</strong>')
+        .replace(/\*(.*?)\*/gim, '<em class="md-em">$1</em>')
+        
+        // 处理代码块
+        .replace(/```([\s\S]*?)```/gim, '<pre class="md-pre"><code class="md-code">$1</code></pre>')
+        .replace(/`(.*?)`/gim, '<code class="md-inline-code">$1</code>')
+        
+        // 处理链接
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="md-link">$1</a>')
+        
+        // 按段落分割处理
+        .split('\n\n')
+        .map(paragraph => {
+          if (paragraph.trim() === '') return ''
+          
+          // 处理有序列表段落
+          if (/^\d+\.\s/.test(paragraph.trim())) {
+            const listItems = paragraph
+              .split('\n')
+              .filter(line => line.trim())
+              .map(line => {
+                const match = line.match(/^\d+\.\s+(.*)$/)
+                if (match) {
+                  return `<li class="md-li md-li-ordered">${match[1]}</li>`
+                }
+                return line
+              })
+              .join('')
+            return `<ol class="md-ol">${listItems}</ol>`
+          }
+          
+          // 处理无序列表段落
+          if (/^[\*\-]\s/.test(paragraph.trim())) {
+            const listItems = paragraph
+              .split('\n')
+              .filter(line => line.trim())
+              .map(line => {
+                const match = line.match(/^[\*\-]\s+(.*)$/)
+                if (match) {
+                  return `<li class="md-li">${match[1]}</li>`
+                }
+                return line
+              })
+              .join('')
+            return `<ul class="md-ul">${listItems}</ul>`
+          }
+          
+          // 如果是标题或代码块，不包装段落
+          if (paragraph.includes('<h1') || paragraph.includes('<h2') || 
+              paragraph.includes('<h3') || paragraph.includes('<h4') || 
+              paragraph.includes('<h5') || paragraph.includes('<pre')) {
+            return paragraph
+          }
+          
+          // 普通段落
+          return `<p class="md-p">${paragraph.replace(/\n/g, '<br>')}</p>`
+        })
+        .filter(p => p.trim() !== '')
+        .join('')
+    }
 
     const formatDate = (date) => {
       return dayjs(date).format('YYYY-MM-DD HH:mm:ss')
@@ -229,7 +308,6 @@ export default {
 
       try {
         await reviewStore.fetchReview(courseId)
-        // 获取所有评价的作者名字
         reviews.value.forEach((review) => {
           getAuthorName(review.user_id)
         })
@@ -248,7 +326,8 @@ export default {
         const response = await fetch(`http://localhost:3000/api/reviews/course/${courseId}/summary`)
         const data = await response.json()
         if (data.success) {
-          summary.value = data.data.summary
+          // 使用markdown处理函数
+          summary.value = processMarkdown(data.data.summary)
         } else {
           summary.value = ''
         }
@@ -295,7 +374,6 @@ export default {
 
         if (response.success) {
           ElMessage.success(response.message || '选课成功')
-          // 刷新排课数据
           fetchSections()
         }
       } catch (error) {
@@ -314,7 +392,6 @@ export default {
 
         if (response) {
           ElMessage.success('评价提交成功')
-          // 刷新评价数据
           fetchReviews()
           newReview.value.content = ''
         }
@@ -332,8 +409,8 @@ export default {
     onMounted(() => {
       fetchCourseDetail()
       fetchSections()
-      fetchReviews() // 新增的获取评价数据
-      fetchSummary() // 新增的获取评价总结
+      fetchReviews()
+      fetchSummary()
     })
 
     return {
@@ -361,6 +438,7 @@ export default {
       formatDate,
       getAuthorName,
       authorNames,
+      processMarkdown
     }
   },
 }
@@ -445,10 +523,176 @@ export default {
 
 .summary-content {
   margin-bottom: 20px;
-  padding: 15px;
+  padding: 20px;
   border: 1px solid #e4e7ed;
-  border-radius: 4px;
-  background-color: #f9f9f9;
+  border-radius: 8px;
+  background-color: #fafafa;
   line-height: 1.6;
+}
+
+/* Markdown样式 */
+.markdown-content {
+  color: #333;
+}
+
+.markdown-content :deep(.md-h1) {
+  font-size: 1.8em;
+  font-weight: 600;
+  margin: 1.2em 0 0.8em 0;
+  color: #2c3e50;
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 0.3em;
+}
+
+.markdown-content :deep(.md-h2) {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 1em 0 0.6em 0;
+  color: #34495e;
+  border-bottom: 1px solid #bdc3c7;
+  padding-bottom: 0.2em;
+}
+
+.markdown-content :deep(.md-h3) {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 0.8em 0 0.5em 0;
+  color: #5d6d7e;
+}
+
+.markdown-content :deep(.md-h4) {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.7em 0 0.4em 0;
+  color: #6c7b8a;
+}
+
+.markdown-content :deep(.md-h5) {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0.6em 0 0.3em 0;
+  color: #7b8794;
+}
+
+.markdown-content :deep(.md-p) {
+  margin: 0.8em 0;
+  line-height: 1.7;
+  color: #2c3e50;
+}
+
+.markdown-content :deep(.md-strong) {
+  font-weight: 600;
+  color: #e74c3c;
+}
+
+.markdown-content :deep(.md-em) {
+  font-style: italic;
+  color: #8e44ad;
+}
+
+.markdown-content :deep(.md-ul),
+.markdown-content :deep(.md-ol) {
+  margin: 1em 0;
+  padding-left: 0;
+}
+
+.markdown-content :deep(.md-li) {
+  margin: 0.3em 0;
+  padding-left: 1.5em;
+  position: relative;
+  line-height: 1.6;
+  color: #34495e;
+}
+
+.markdown-content :deep(.md-ul .md-li::before) {
+  content: "•";
+  color: #3498db;
+  font-weight: bold;
+  position: absolute;
+  left: 0.5em;
+}
+
+.markdown-content :deep(.md-ol) {
+  counter-reset: li-counter;
+}
+
+.markdown-content :deep(.md-ol .md-li) {
+  counter-increment: li-counter;
+}
+
+.markdown-content :deep(.md-ol .md-li::before) {
+  content: counter(li-counter) ".";
+  color: #3498db;
+  font-weight: bold;
+  position: absolute;
+  left: 0;
+  width: 1.2em;
+  text-align: right;
+}
+
+.markdown-content :deep(.md-pre) {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 1em;
+  margin: 1em 0;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.markdown-content :deep(.md-code) {
+  color: #d73a49;
+  background: transparent;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-content :deep(.md-inline-code) {
+  background-color: #f1f2f6;
+  color: #e74c3c;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-content :deep(.md-link) {
+  color: #3498db;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.markdown-content :deep(.md-link:hover) {
+  color: #2980b9;
+  border-bottom-color: #3498db;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .markdown-content :deep(.md-h1) {
+    font-size: 1.5em;
+  }
+  
+  .markdown-content :deep(.md-h2) {
+    font-size: 1.3em;
+  }
+  
+  .markdown-content :deep(.md-h3) {
+    font-size: 1.1em;
+  }
+  
+  .markdown-content :deep(.md-h4) {
+    font-size: 1em;
+  }
+  
+  .markdown-content :deep(.md-h5) {
+    font-size: 0.95em;
+  }
+  
+  .markdown-content :deep(.md-pre) {
+    padding: 0.8em;
+    font-size: 0.9em;
+  }
 }
 </style>
