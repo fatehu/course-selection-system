@@ -32,6 +32,10 @@ services:
     build: ./server
     env_file:
       - ./server/docker.env
+    environment:
+    - DB_HOST=mysql      # 强制覆盖
+    - REDIS_HOST=redis   # 强制覆盖
+    - NODE_ENV=docker
     volumes:
       - ./server/data:/app/data
       - ./server/uploads:/app/uploads
@@ -48,6 +52,10 @@ services:
     build: ./server
     env_file:
       - ./server/docker.env
+    environment:
+    - DB_HOST=mysql      # 强制覆盖
+    - REDIS_HOST=redis   # 强制覆盖
+    - NODE_ENV=docker
     volumes:
       - ./server/data:/app/data
       - ./server/uploads:/app/uploads

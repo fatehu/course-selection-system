@@ -5,30 +5,22 @@ class WebSearchService {
   constructor() {
     // 支持的搜索引擎配置 - 使用免费API
     this.searchEngines = {
-      serpapi: {
-        name: 'SerpAPI',
+      yandex: {
+        name: 'Yandex',
         enabled: process.env.SERPAPI_KEY ? true : false,
         apiKey: process.env.SERPAPI_KEY,
         endpoint: 'https://serpapi.com/search',
-        parseResults: this.parseSerpApiResults,
-        description: '免费层每月100次搜索'
+        parseResults: this.parseYandexResults,
+        description: 'Yandex搜索引擎，免费层每月100次搜索'
       },
       serper: {
-        name: 'Serper',
+        name: 'Google',
         enabled: process.env.SERPER_API_KEY ? true : false,
         apiKey: process.env.SERPER_API_KEY,
         endpoint: 'https://google.serper.dev/search',
         parseResults: this.parseSerperResults,
         description: '免费层2500次搜索'
-      },
-      // brave: {
-      //   name: 'Brave Search',
-      //   enabled: process.env.BRAVE_API_KEY ? true : false,
-      //   apiKey: process.env.BRAVE_API_KEY,
-      //   endpoint: 'https://api.search.brave.com/res/v1/web/search',
-      //   parseResults: this.parseBraveResults,
-      //   description: '免费层每月1000次搜索'
-      // }
+      }
     };
     
     // 默认激活的搜索引擎 - 自动选择第一个可用的
@@ -139,14 +131,15 @@ class WebSearchService {
       
       // 根据不同搜索引擎构建请求
       switch (engineId) {
-        case 'serpapi':
+        case 'yandex':
           response = await axios.get(engine.endpoint, {
             params: {
-              q: query,
+              engine: 'yandex',        // 指定使用Yandex引擎
+              text: query,             // Yandex使用text参数而不是q
               api_key: engine.apiKey,
               num: limit,
-              hl: 'zh-cn',  // 设置中文搜索
-              gl: 'cn'      // 地区设置为中国
+              lr: '134',               // 地区代码：134为中国，可以改为其他地区
+              lang: 'zh'               // 搜索语言：中文
             }
           });
           break;
@@ -162,21 +155,6 @@ class WebSearchService {
             headers: {
               'X-API-KEY': engine.apiKey,
               'Content-Type': 'application/json'
-            }
-          });
-          break;
-          
-        case 'brave':
-          response = await axios.get(engine.endpoint, {
-            headers: {
-              'Accept': 'application/json',
-              'Accept-Encoding': 'gzip',
-              'X-Subscription-Token': engine.apiKey
-            },
-            params: {
-              q: query,
-              count: limit,
-              search_lang: 'zh-CN' // 搜索语言设置为中文
             }
           });
           break;
@@ -199,21 +177,22 @@ class WebSearchService {
     }
   }
   
-  // 解析SerpAPI搜索结果
-  parseSerpApiResults(data, limit) {
+  // 解析Yandex搜索结果
+  parseYandexResults(data, limit) {
+    // Yandex的结果结构与Google略有不同
     if (!data.organic_results || !Array.isArray(data.organic_results)) {
       return [];
     }
     
     return data.organic_results.slice(0, limit).map(item => ({
       title: item.title,
-      snippet: item.snippet,
+      snippet: item.snippet || item.text || '', // Yandex可能使用text字段
       url: item.link,
-      source: 'SerpAPI'
+      source: 'Yandex'
     }));
   }
   
-  // 解析Serper搜索结果
+  // 解析Serper搜索结果（保持不变）
   parseSerperResults(data, limit) {
     if (!data.organic || !Array.isArray(data.organic)) {
       return [];
@@ -224,20 +203,6 @@ class WebSearchService {
       snippet: item.snippet,
       url: item.link,
       source: 'Serper'
-    }));
-  }
-  
-  // 解析Brave搜索结果
-  parseBraveResults(data, limit) {
-    if (!data.web || !data.web.results) {
-      return [];
-    }
-    
-    return data.web.results.slice(0, limit).map(item => ({
-      title: item.title,
-      snippet: item.description,
-      url: item.url,
-      source: 'Brave'
     }));
   }
   
