@@ -19,13 +19,16 @@ export const useReviewStore = defineStore('review', {
 
         console.log('获取课程评价:', response)
 
-        if (response) {
-          this.reviews = response
+        if (response && response.success) {
+          this.reviews = response.data
+        } else {
+          this.reviews = []
         }
 
         return response
       } catch (error) {
         this.error = error.message || '获取课程评价失败'
+        this.reviews = []
         return []
       }
     },

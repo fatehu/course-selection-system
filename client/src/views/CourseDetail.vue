@@ -142,6 +142,7 @@ import { useSectionStore } from '../store/sectionStore'
 import { useEnrollmentStore } from '../store/enrollmentStore'
 import { useUserStore } from '../store/userStore'
 import { useReviewStore } from '../store/reviewStore'
+import { getCourseReviewSummary } from '../api/review'
 import dayjs from 'dayjs'
 
 export default {
@@ -323,17 +324,18 @@ export default {
     const fetchSummary = async () => {
       loadingSummary.value = true
       try {
-        const response = await fetch(`http://localhost:3000/api/reviews/course/${courseId}/summary`)
-        const data = await response.json()
-        if (data.success) {
+        const response = await getCourseReviewSummary(courseId)
+        console.log('获取课程评价总结响应:', response)
+        if (response.success) {
           // 使用markdown处理函数
-          summary.value = processMarkdown(data.data.summary)
+          summary.value = processMarkdown(response.data.summary)
         } else {
           summary.value = ''
         }
       } catch (error) {
         console.error('获取课程评价总结失败', error)
         ElMessage.error('获取课程评价总结失败')
+        summary.value = ''
       } finally {
         loadingSummary.value = false
       }

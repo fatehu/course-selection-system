@@ -4,7 +4,7 @@ import axios from 'axios';
 const api = axios.create({
   // 生产环境使用相对路径，开发环境使用localhost
   baseURL: process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:3000/api',
-  timeout: 10000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json'
   }

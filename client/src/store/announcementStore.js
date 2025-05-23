@@ -11,25 +11,32 @@ export const useAnnouncementStore = defineStore('announcement', {
   state: () => ({
     announcements: [],
     currentAnnouncement: null,
+    loading: false,
     error: null,
   }),
 
   actions: {
     // 获取所有公告
     async fetchAllAnnouncements() {
+      this.loading = true
       this.error = null
 
       try {
         const response = await getAllAnnouncements()
 
-        if (response) {
-          this.announcements = response
+        if (response && response.success) {
+          this.announcements = response.data
+        } else {
+          this.announcements = []
         }
 
-        return response.data
+        return response
       } catch (error) {
         this.error = error.message || '获取公告列表失败'
-        return []
+        this.announcements = []
+        return { success: false, data: [] }
+      } finally {
+        this.loading = false
       }
     },
 
@@ -42,14 +49,17 @@ export const useAnnouncementStore = defineStore('announcement', {
         const response = await getAnnouncement(id)
         console.log(response)
 
-        if (response) {
-          this.currentAnnouncement = response
+        if (response && response.success) {
+          this.currentAnnouncement = response.data
+        } else {
+          this.currentAnnouncement = null
         }
 
         return response
       } catch (error) {
         this.error = error.message || '获取公告详情失败'
-        return null
+        this.currentAnnouncement = null
+        return { success: false, data: null }
       } finally {
         this.loading = false
       }
@@ -63,7 +73,7 @@ export const useAnnouncementStore = defineStore('announcement', {
       try {
         const response = await createAnnouncement(announcementData)
 
-        if (response.success) {
+        if (response && response.success) {
           // 添加到公告列表
           this.announcements.unshift(response.data)
         }
@@ -85,7 +95,7 @@ export const useAnnouncementStore = defineStore('announcement', {
       try {
         const response = await updateAnnouncement(id, announcementData)
 
-        if (response.success) {
+        if (response && response.success) {
           // 更新公告列表中的公告
           const index = this.announcements.findIndex((a) => a.id === id)
           if (index !== -1) {
@@ -115,7 +125,7 @@ export const useAnnouncementStore = defineStore('announcement', {
       try {
         const response = await deleteAnnouncement(id)
 
-        if (response) {
+        if (response && response.success) {
           // 从公告列表中移除
           this.announcements = this.announcements.filter((a) => a.id !== id)
 
