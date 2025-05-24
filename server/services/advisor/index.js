@@ -27,6 +27,14 @@ class AdvisorService {
     this.embeddingService = new EmbeddingService();
     this.vectorStore = new VectorStore({ storePath: this.vectorStorePath });
     this.deepseekService = new DeepSeekService();
+    
+    // 重排配置
+    this.rerankingConfig = {
+      enabled: process.env.ENABLE_RERANKING !== 'false', // 默认启用
+      topK: 10, // 初始检索的文档数量
+      finalK: 5, // 重排后保留的文档数量
+      batchSize: 5 // 每批评估的文档数量
+    };
   }
   
   // 初始化服务
@@ -194,13 +202,34 @@ class AdvisorService {
       if (knowledgeBaseId) {
         // 使用指定知识库搜索
         const knowledgeBaseService = require('../knowledgeBaseService');
-        searchResults = await knowledgeBaseService.searchKnowledgeBase(knowledgeBaseId, question, 5);
+        // 如果启用重排，检索更多文档
+        const searchK = this.rerankingConfig.enabled ? this.rerankingConfig.topK : 5;
+        searchResults = await knowledgeBaseService.searchKnowledgeBase(knowledgeBaseId, question, searchK);
       } else {
         // 使用默认向量存储搜索
-        searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
+        const searchK = this.rerankingConfig.enabled ? this.rerankingConfig.topK : 5;
+        searchResults = this.vectorStore.similaritySearch(queryEmbedding, searchK);
       }
       
       console.log(`找到${searchResults.length}个相关文档片段`);
+      
+      // 对搜索结果进行重排
+      if (this.rerankingConfig.enabled && searchResults.length > 0) {
+        console.log('开始对搜索结果进行LLM重排...');
+        
+        // 根据文档数量选择重排策略
+        if (searchResults.length > 5) {
+          // 文档较多时使用高级批量评分方法
+          searchResults = await this.rerankDocumentsAdvanced(question, searchResults);
+        } else {
+          // 文档较少时使用简单排序方法
+          searchResults = await this.rerankDocuments(question, searchResults);
+        }
+        
+        // 保留重排后的前K个文档
+        searchResults = searchResults.slice(0, this.rerankingConfig.finalK);
+        console.log(`重排后保留${searchResults.length}个最相关文档`);
+      }
       
       // 处理网络搜索
       let webResults = [];
@@ -303,7 +332,7 @@ class AdvisorService {
     }
   }
 
-  // 流式回答问题
+// 流式回答问题
   async *answerQuestionStream(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false, useDeepThinking = false) {
     if (!this.initialized) {
       await this.initialize();
@@ -340,13 +369,34 @@ class AdvisorService {
       if (knowledgeBaseId) {
         // 使用指定知识库搜索
         const knowledgeBaseService = require('../knowledgeBaseService');
-        searchResults = await knowledgeBaseService.searchKnowledgeBase(knowledgeBaseId, question, 5);
+        // 如果启用重排，检索更多文档
+        const searchK = this.rerankingConfig.enabled ? this.rerankingConfig.topK : 5;
+        searchResults = await knowledgeBaseService.searchKnowledgeBase(knowledgeBaseId, question, searchK);
       } else {
         // 使用默认向量存储搜索
-        searchResults = this.vectorStore.similaritySearch(queryEmbedding, 5);
+        const searchK = this.rerankingConfig.enabled ? this.rerankingConfig.topK : 5;
+        searchResults = this.vectorStore.similaritySearch(queryEmbedding, searchK);
       }
       
       console.log(`找到${searchResults.length}个相关文档片段`);
+      
+      // 对搜索结果进行重排
+      if (this.rerankingConfig.enabled && searchResults.length > 0) {
+        console.log('开始对搜索结果进行LLM重排...');
+        
+        // 根据文档数量选择重排策略
+        if (searchResults.length > 5) {
+          // 文档较多时使用高级批量评分方法
+          searchResults = await this.rerankDocumentsAdvanced(question, searchResults);
+        } else {
+          // 文档较少时使用简单排序方法
+          searchResults = await this.rerankDocuments(question, searchResults);
+        }
+        
+        // 保留重排后的前K个文档
+        searchResults = searchResults.slice(0, this.rerankingConfig.finalK);
+        console.log(`重排后保留${searchResults.length}个最相关文档`);
+      }
       
       // 处理网络搜索
       let webResults = [];
@@ -652,6 +702,197 @@ class AdvisorService {
     } catch (error) {
       console.error("清理缓存失败:", error);
       throw error;
+    }
+  }
+
+  /**
+   * 使用LLM重排文档
+   * @param {string} query - 用户查询
+   * @param {Array} documents - 候选文档列表
+   * @returns {Promise<Array>} 重排后的文档列表
+   */
+  async rerankDocuments(query, documents) {
+    try {
+      if (!documents || documents.length === 0) {
+        return documents;
+      }
+
+      console.log(`开始重排 ${documents.length} 个文档...`);
+      
+      // 准备重排提示词
+      const systemPrompt = `你是一个文档相关性评估专家。你的任务是评估给定文档与用户查询的相关性，并按相关度从高到低排序。
+
+评估标准：
+1. 内容相关性：文档是否直接回答了用户的问题
+2. 信息完整性：文档是否包含用户需要的完整信息
+3. 准确性：文档信息是否准确可靠
+4. 具体性：文档是否提供了具体的细节而非泛泛而谈
+
+请仔细分析每个文档，返回排序后的文档编号列表（JSON格式）。`;
+
+      // 构建文档列表
+      const documentsText = documents.map((doc, index) => {
+        const content = doc.document ? doc.document.content : doc.content;
+        const source = doc.document?.metadata?.source || doc.metadata?.source || '未知来源';
+        return `文档${index + 1} (来源: ${source}):\n${content.substring(0, 500)}${content.length > 500 ? '...' : ''}`;
+      }).join('\n\n---\n\n');
+
+      const userPrompt = `用户查询：${query}\n\n需要评估的文档：\n\n${documentsText}\n\n请按相关性从高到低排序这些文档，返回格式为JSON数组，例如：[3, 1, 5, 2, 4]`;
+
+      const response = await this.deepseekService.client.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.1,
+        max_tokens: 200
+      });
+
+      const responseText = response.choices[0].message.content.trim();
+      
+      // 解析排序结果
+      let rankings;
+      try {
+        // 提取JSON数组
+        const jsonMatch = responseText.match(/\[[\d,\s]+\]/);
+        if (jsonMatch) {
+          rankings = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error("未找到有效的排序结果");
+        }
+      } catch (parseError) {
+        console.error('解析重排结果失败:', parseError);
+        // 如果解析失败，返回原始顺序
+        return documents;
+      }
+
+      // 验证排序结果
+      if (!Array.isArray(rankings) || rankings.length !== documents.length) {
+        console.warn('重排结果无效，保持原始顺序');
+        return documents;
+      }
+
+      // 按照新顺序重排文档
+      const rerankedDocuments = [];
+      for (const rank of rankings) {
+        const index = rank - 1; // 转换为0基索引
+        if (index >= 0 && index < documents.length) {
+          rerankedDocuments.push(documents[index]);
+        }
+      }
+
+      // 如果重排后文档数量不对，返回原始文档
+      if (rerankedDocuments.length !== documents.length) {
+        console.warn('重排后文档数量不匹配，保持原始顺序');
+        return documents;
+      }
+
+      console.log(`重排完成，新顺序: ${rankings.join(', ')}`);
+      return rerankedDocuments;
+    } catch (error) {
+      console.error('文档重排失败:', error.message);
+      // 如果重排失败，返回原始文档顺序
+      return documents;
+    }
+  }
+
+  /**
+   * 使用LLM重排文档（高级版本，支持批量评分）
+   * @param {string} query - 用户查询
+   * @param {Array} documents - 候选文档列表
+   * @returns {Promise<Array>} 重排后的文档列表
+   */
+  async rerankDocumentsAdvanced(query, documents) {
+    try {
+      if (!documents || documents.length === 0) {
+        return documents;
+      }
+
+      console.log(`开始高级重排 ${documents.length} 个文档...`);
+      
+      // 准备批量评分提示词
+      const systemPrompt = `你是一个文档相关性评估专家。你的任务是评估给定文档与用户查询的相关性。
+
+评分标准（0-10分）：
+- 10分：文档完美回答了用户的问题，包含所有需要的信息
+- 8-9分：文档很好地回答了问题，包含大部分相关信息
+- 6-7分：文档部分回答了问题，包含一些有用信息
+- 4-5分：文档与问题有一定相关性，但信息有限
+- 2-3分：文档仅有轻微相关性
+- 0-1分：文档与问题无关
+
+请为每个文档评分，返回JSON格式：{"scores": [8, 5, 9, 3, 7]}`;
+
+      // 构建文档列表
+      const documentsText = documents.map((doc, index) => {
+        const content = doc.document ? doc.document.content : doc.content;
+        const source = doc.document?.metadata?.source || doc.metadata?.source || '未知来源';
+        // 限制每个文档的长度以避免超出token限制
+        const truncatedContent = content.length > 600 ? 
+          content.substring(0, 600) + '...' : content;
+        return `文档${index + 1} (来源: ${source}):\n${truncatedContent}`;
+      }).join('\n\n---\n\n');
+
+      const userPrompt = `用户查询：${query}\n\n需要评分的文档：\n\n${documentsText}\n\n请为每个文档评分（0-10分），返回JSON格式。`;
+
+      const response = await this.deepseekService.client.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.1,
+        max_tokens: 200
+      });
+
+      const responseText = response.choices[0].message.content.trim();
+      
+      // 解析评分结果
+      let scores;
+      try {
+        const jsonMatch = responseText.match(/\{[^}]*"scores"[^}]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          scores = parsed.scores;
+        } else {
+          throw new Error("未找到有效的评分结果");
+        }
+      } catch (parseError) {
+        console.error('解析评分结果失败:', parseError);
+        // 如果解析失败，使用简单重排
+        return this.rerankDocuments(query, documents);
+      }
+
+      // 验证评分结果
+      if (!Array.isArray(scores) || scores.length !== documents.length) {
+        console.warn('评分结果无效，使用简单重排');
+        return this.rerankDocuments(query, documents);
+      }
+
+      // 将分数附加到文档上并排序
+      const scoredDocuments = documents.map((doc, index) => ({
+        ...doc,
+        rerankScore: scores[index] || 0,
+        originalSimilarity: doc.similarity || 0
+      }));
+
+      // 按照重排分数降序排序
+      scoredDocuments.sort((a, b) => {
+        // 首先按重排分数排序
+        if (b.rerankScore !== a.rerankScore) {
+          return b.rerankScore - a.rerankScore;
+        }
+        // 如果重排分数相同，使用原始相似度
+        return b.originalSimilarity - a.originalSimilarity;
+      });
+
+      console.log(`高级重排完成，分数分布: ${scores.join(', ')}`);
+      return scoredDocuments;
+    } catch (error) {
+      console.error('高级文档重排失败:', error.message);
+      // 如果失败，尝试简单重排
+      return this.rerankDocuments(query, documents);
     }
   }
 }
