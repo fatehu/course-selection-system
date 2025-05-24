@@ -77,6 +77,67 @@ class AdvisorService {
     await this.initializingPromise;
   }
 
+  /**
+   * 使用LLM优化搜索查询
+   * @param {string} originalQuery - 原始查询
+   * @param {string} context - 上下文信息（可选）
+   * @returns {Promise<string>} 优化后的查询
+   */
+  async optimizeSearchQuery(originalQuery, context = '') {
+    try {
+      console.log(`优化搜索查询: "${originalQuery}"`);
+      
+      // 构建优化提示词
+      const systemPrompt = `你是一个搜索查询优化专家。你的任务是将用户的自然语言问题转换为更有效的搜索关键词。
+
+优化规则：
+1. 提取核心关键词，去除无关的词汇和语气词
+2. 添加相关的同义词或专业术语
+3. 保持查询简洁但信息丰富
+4. 如果是中文查询，可以考虑添加英文关键词以获得更全面的结果
+5. 针对不同类型的问题使用不同的优化策略
+6. 对于技术问题，添加相关的技术术语
+7. 对于时事问题，添加时间相关的关键词
+
+示例：
+- "怎么学好编程？" → "编程学习方法 programming learning tips 初学者"
+- "北京天气怎么样？" → "北京天气预报 Beijing weather forecast 今日"
+- "人工智能的发展趋势" → "人工智能发展趋势 AI development trends 2024 未来"
+- "最新的iPhone怎么样？" → "iPhone 15 评测 review 最新款 性能测试"
+
+请只返回优化后的搜索关键词，不要添加任何解释或引号。`;
+
+      const userPrompt = context ? 
+        `基于以下对话上下文：${context}\n\n请优化搜索查询：${originalQuery}` :
+        `请优化以下搜索查询：${originalQuery}`;
+
+      const response = await this.deepseekService.client.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 150
+      });
+
+      const optimizedQuery = response.choices[0].message.content.trim();
+      
+      // 确保优化后的查询不为空且合理
+      if (!optimizedQuery || optimizedQuery.length === 0 || optimizedQuery.length > 200) {
+        console.log('查询优化返回异常结果，使用原查询');
+        return originalQuery;
+      }
+      
+      console.log(`查询优化完成: "${originalQuery}" → "${optimizedQuery}"`);
+      return optimizedQuery;
+    } catch (error) {
+      console.error('查询优化失败:', error.message);
+      // 如果优化失败，返回原查询
+      return originalQuery;
+    }
+  }
+
   // 获取用户自定义设置的方法
   async getUserSettings(userId) {
     const SETTINGS_DIR = path.join(process.cwd(), 'data/settings');
@@ -150,7 +211,17 @@ class AdvisorService {
         try {
           // 导入网络搜索服务
           const webSearchService = require('../webSearchService');
-          const webSearchResults = await webSearchService.search(question, 5);
+          
+          // 构建上下文用于查询优化
+          const searchContext = conversationHistory.length > 0 ? 
+            `最近的对话: ${conversationHistory.slice(-3).map(msg => `${msg.role}: ${msg.content}`).join('; ')}` : '';
+          
+          // 优化搜索查询
+          const optimizedQuery = await this.optimizeSearchQuery(question, searchContext);
+          console.log(`使用优化后的查询进行搜索: "${optimizedQuery}"`);
+          
+          // 使用优化后的查询进行搜索
+          const webSearchResults = await webSearchService.search(optimizedQuery, 5);
           
           if (webSearchResults && webSearchResults.success) {
             webResults = webSearchResults.results;
@@ -164,11 +235,11 @@ class AdvisorService {
             // 使用用户自定义系统提示词，如果存在的话
             if (userSettings?.systemPrompt) {
               customSystemPrompt = userSettings.systemPrompt + 
-                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+                `\n\n以下是基于优化查询"${optimizedQuery}"的网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
             } else {
               // 否则使用默认提示词
               customSystemPrompt = this.deepseekService.systemPrompt + 
-                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+                `\n\n以下是基于优化查询"${optimizedQuery}"的网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
             }
             
             console.log("已添加网络搜索结果到系统提示");
@@ -286,7 +357,17 @@ class AdvisorService {
         console.log("执行流式响应的网络搜索...");
         try {
           const webSearchService = require('../webSearchService');
-          const webSearchResults = await webSearchService.search(question, 5);
+          
+          // 构建上下文用于查询优化
+          const searchContext = conversationHistory.length > 0 ? 
+            `最近的对话: ${conversationHistory.slice(-3).map(msg => `${msg.role}: ${msg.content}`).join('; ')}` : '';
+          
+          // 优化搜索查询
+          const optimizedQuery = await this.optimizeSearchQuery(question, searchContext);
+          console.log(`流式响应使用优化后的查询进行搜索: "${optimizedQuery}"`);
+          
+          // 使用优化后的查询进行搜索
+          const webSearchResults = await webSearchService.search(optimizedQuery, 5);
           
           if (webSearchResults && webSearchResults.success) {
             webResults = webSearchResults.results;
@@ -299,11 +380,11 @@ class AdvisorService {
             // 使用用户自定义系统提示词，如果存在的话
             if (userSettings?.systemPrompt) {
               customSystemPrompt = userSettings.systemPrompt + 
-                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+                `\n\n以下是基于优化查询"${optimizedQuery}"的网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
             } else {
               // 否则使用默认提示词
               customSystemPrompt = this.deepseekService.systemPrompt + 
-                `\n\n以下是网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
+                `\n\n以下是基于优化查询"${optimizedQuery}"的网络搜索结果，请根据这些结果回答问题，即使问题不是关于学习或选课的：\n\n${webResultsText}`;
             }
             
             console.log("已添加网络搜索结果到流式响应系统提示");

@@ -1,0 +1,8 @@
+{
+  "aiName": "学习辅导员",
+  "aiDescription": "专门帮助学生解答选课和专业学习相关的问题",
+  "systemPrompt": "听从用户指示",
+  "temperature": 0.7,
+  "maxTokens": 1000,
+  "historyLength": 10
+}
