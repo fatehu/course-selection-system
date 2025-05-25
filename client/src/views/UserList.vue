@@ -17,6 +17,18 @@
               </template>
             </el-input>
             
+            <el-upload
+              class="batch-import-uploader"
+              action="" 
+              :http-request="handleCustomUpload"
+              :show-file-list="false"
+              :before-upload="beforeUploadCheck"
+            >
+              <el-button type="success" :loading="isUploading">
+                <el-icon><UploadFilled /></el-icon>
+                &nbsp;{{ isUploading ? '正在导入...' : '批量导入 (CSV)' }}
+              </el-button>
+            </el-upload>
             <el-button type="primary" @click="createUser">
               新增用户
             </el-button>
@@ -94,24 +106,69 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { Search } from '@element-plus/icons-vue';
-import { getAllUsers, deleteUser } from '../api/user';
+import { Search, UploadFilled } from '@element-plus/icons-vue';
+import { getAllUsers, deleteUser, batchImportUsersFromCSV } from '../api/user';
 
 export default {
   name: 'UserListView',
   components: {
-    Search
+    Search,
+    UploadFilled
   },
   setup() {
     const router = useRouter();
-    
     const users = ref([]);
     const loading = ref(true);
     const searchKeyword = ref('');
     const currentPage = ref(1);
     const pageSize = ref(10);
     const deletingId = ref(null); // 添加删除状态标识
-    
+
+    // ---  上传状态 ---
+    const isUploading = ref(false);
+    // --- 上传前检查 ---
+    const beforeUploadCheck = (file) => {
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      if (!isCsv) {
+        ElMessage.error('只能上传 CSV 格式的文件!');
+        return false;
+      }
+      // 可以添加大小检查等
+      return true;
+    };
+
+    // --- 自定义上传处理函数 ---
+    const handleCustomUpload = async (options) => {
+      const file = options.file;
+      isUploading.value = true;
+      loading.value = true; // 也可以用 loading 表示
+
+      try {
+        // 调用我们定义的 API 函数
+        const response = await batchImportUsersFromCSV(file);
+
+        // 注意：axios 拦截器会返回 response.data，所以这里直接用 response
+        if (response.success) {
+          ElMessage.success(`${response.message || `成功导入 ${response.insertedCount} 名学生！`}`);
+          loadUsers(); // 刷新列表
+        } else {
+          let errorMsg = response.message || '批量导入失败';
+            if (response.errors && response.errors.length > 0) {
+                 errorMsg += ` (错误数: ${response.errors.length})，详情请查看控制台。`;
+                 console.error("导入错误详情:", response.errors);
+            }
+          ElMessage.error(errorMsg);
+        }
+      } catch (error) {
+          // axios 拦截器会处理 401，这里处理其他错误
+          console.error('上传失败:', error);
+          ElMessage.error(error.message || '文件上传失败，请检查网络或联系管理员。');
+      } finally {
+        isUploading.value = false;
+        loading.value = false;
+      }
+    };
+
     // 过滤后的用户列表
     const filteredUsers = computed(() => {
       let filteredList = users.value;
@@ -265,7 +322,10 @@ export default {
       editUser,
       handleDeleteUser, // 更新方法名
       handleSizeChange,
-      handleCurrentChange
+      handleCurrentChange,
+      isUploading,
+      handleCustomUpload,
+      beforeUploadCheck
     };
   }
 };
@@ -306,5 +366,19 @@ export default {
 .pagination-container {
   margin-top: 20px;
   text-align: right;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px; 
+}
+
+.batch-import-uploader {
+  display: inline-block;
+}
+
+.search-input {
+  width: 250px;
 }
 </style>
