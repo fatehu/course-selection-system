@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs-extra'); // 使用 fs-extra 的 Promise 版本
 const DocumentProcessor = require('./documentProcessor');
-const EmbeddingService = require('./embeddingService');
+const embeddingService = require('./embeddingService');
 const VectorStore = require('./vectorStore');
 const DeepSeekService = require('./deepseekService');
 const conversationService = require('./conversationService');
@@ -24,7 +24,7 @@ class AdvisorService {
 
     // 初始化组件
     this.documentProcessor = new DocumentProcessor();
-    this.embeddingService = new EmbeddingService();
+    this.embeddingService = embeddingService;
     this.vectorStore = new VectorStore({ storePath: this.vectorStorePath });
     this.deepseekService = new DeepSeekService();
 
@@ -37,7 +37,7 @@ class AdvisorService {
     };
   }
 
-  // 初始化服务 (已经是异步，但内部调用需要修改)
+  // 初始化服务
   async initialize() {
     if (this.initialized) return;
 
@@ -144,18 +144,18 @@ class AdvisorService {
   }
 
 
-  // 获取用户自定义设置的方法 (异步)
+  // 获取用户自定义设置的方法
   async getUserSettings(userId) {
     const SETTINGS_DIR = path.join(process.cwd(), 'data/settings');
     const settingsPath = path.join(SETTINGS_DIR, `advisor-settings-${userId}.json`);
 
-    // 确保目录存在 (异步)
+    // 确保目录存在
     await fs.ensureDir(SETTINGS_DIR);
 
-    // 读取用户设置 (异步)
-    if (await fs.pathExists(settingsPath)) { // <--- 修改: 使用 await fs.pathExists
+    // 读取用户设置
+    if (await fs.pathExists(settingsPath)) {
       try {
-        const settings = await fs.readJson(settingsPath); // <--- 修改: 使用 await fs.readJson
+        const settings = await fs.readJson(settingsPath);
         return settings;
       } catch (error) {
         console.error('读取用户设置失败:', error);
@@ -651,7 +651,7 @@ class AdvisorService {
       this.vectorStore.addDocuments(allChunks, embeddings);
 
       // 保存向量存储 (异步)
-      await this.vectorStore.save(); // <--- 修改: 使用 await
+      await this.vectorStore.save();
 
       console.log("默认知识库重建完成");
       return { success: true, message: "默认知识库重建成功", chunksCount: allChunks.length };

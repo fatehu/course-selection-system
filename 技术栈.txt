@@ -1,0 +1,6 @@
+Vue 3.5.13 - 核心框架，使用组合式API
+Vite - 现代化构建工具，热重载超快
+Element Plus - UI组件库，企业级组件系统
+Pinia - 状态管理，Vue 3官方推荐
+Vue Router 4 - 单页应用路由管理
+Axios - HTTP客户端，API请求库

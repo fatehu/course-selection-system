@@ -1,79 +1,112 @@
 /**
- * 混合向量存储实现
- * 实现K-Means 和 LSH 参数自调优
+ * 混合向量存储实现 (HybridVectorStore.js)
+ * 目标：结合 LSH (局部敏感哈希) 和 K-Means 聚类，提供一个高效且支持参数自调优的向量存储和搜索方案。
+ * LSH 用于快速召回候选集，K-Means 用于结构化数据并进行更精确的范围搜索。
  */
-const fs = require('fs-extra');
-const path = require('path');
-const LSHIndex = require('./lshIndex');
-const ClusterIndex = require('./clusterIndex');
+const fs = require('fs-extra'); // 用于文件系统操作，特别是 JSON 的读写和目录创建
+const path = require('path');     // 用于处理文件和目录路径
+const LSHIndex = require('./lshIndex'); // 引入 LSH 索引实现
+const ClusterIndex = require('./clusterIndex'); // 引入 K-Means 聚类索引实现
 
 class HybridVectorStore {
+  /**
+   * 构造函数 - 初始化混合向量存储
+   * @param {object} options - 配置选项
+   * @param {string} options.storePath - 向量存储文件的保存路径
+   */
   constructor(options = {}) {
+    // 存储路径配置，默认为当前工作目录下的 'data/vector-store.json'
     this.storePath = options.storePath || path.join(process.cwd(), 'data/vector-store.json');
 
-    // 核心索引组件
+    // --- 核心索引组件 ---
+    // LSH 索引实例 (默认 1024 维, 16 个哈希表, 每个表 8 个哈希函数)
+    // 1024 是 LSHIndex 的维度，这里可能需要根据实际 embedding 维度调整或让 LSHIndex 内部自适应
     this.lshIndex = new LSHIndex(1024, 16, 8);
+    // K-Means 聚类索引实例 (默认 128 个簇)
     this.clusterIndex = new ClusterIndex({ numClusters: 128 });
 
-    // 数据存储
-    this.documents = [];
-    this.embeddings = [];
-    this.documentMap = new Map();
-    this.deletedDocuments = new Set();
-    this.fileDocumentMap = new Map();
+    // --- 数据存储 ---
+    this.documents = []; // 存储所有文档对象 { id: ..., content: ..., metadata: ... }
+    this.embeddings = []; // 存储所有文档对应的向量，与 this.documents 一一对应
+    this.documentMap = new Map(); // 存储文档 ID 到其在数组中索引的映射，用于快速查找
+    this.deletedDocuments = new Set(); // 存储被“软删除”的文档 ID，这些文档在重建索引前不会被物理删除
+    this.fileDocumentMap = new Map(); // 存储文件 ID 到其包含的所有文档 ID 列表的映射
 
-    // 性能配置
-    this.lshThreshold = 0.1; // LSH候选筛选阈值 (目前未使用)
-    this.enableLSH = true;
-    this.enableClustering = true;
-    this.autoRebuildThreshold = 1000;
-    this.rebuildCounter = 0;
-    this.enableAutoTune = true; // 控制 rebuildIndices 是否在非 forceTune 时自动调优 K-Means
-    this.minDocsForTuning = 100;
+    // --- 性能与行为配置 ---
+    this.lshThreshold = 0.1; // LSH 候选筛选阈值 (目前在 searchInCluster 中未使用，可能为未来预留)
+    this.enableLSH = true; // 是否启用 LSH 索引
+    this.enableClustering = true; // 是否启用 K-Means 聚类索引
+    this.autoRebuildThreshold = 1000; // 自动触发重建索引的文档变动次数阈值
+    this.rebuildCounter = 0; // 文档变动（添加）计数器
+    this.enableAutoTune = true; // 控制 rebuildIndices 是否在非强制调优时自动进行 K-Means 调优
+    this.minDocsForTuning = 100; // 进行参数调优所需的最少文档数量
 
-    this.tunedLSHConfig = null; // 存储 tune() 方法计算出的 LSH 参数
+    // --- 调优参数存储 ---
+    this.tunedLSHConfig = null; // 存储 tune() 方法计算出的 LSH 参数 ({ numHashTables, numHashFunctions })
     this.tunedKValue = null;    // 存储 tune() 方法计算出的 K-Means K 值
 
+    // --- 搜索统计（预留使用） ---
     this.searchStats = {
-      totalSearches: 0,
-      lshCandidates: 0,
-      avgCandidates: 0,
-      searchTime: 0
+      totalSearches: 0, // 总搜索次数
+      lshCandidates: 0, // LSH 产生的候选总数
+      avgCandidates: 0, // 平均候选数
+      searchTime: 0     // 总搜索耗时
     };
 
     console.log('HybridVectorStore 初始化完成');
   }
 
+  /**
+   * 计算两个向量之间的余弦相似度
+   * @param {Array<number>} vecA - 向量 A
+   * @param {Array<number>} vecB - 向量 B
+   * @returns {number} 余弦相似度值 (0 到 1 之间，越高越相似)
+   */
   cosineSimilarity(vecA, vecB) {
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
+    // 安全检查：确保向量有效且长度一致
     if (!vecA || !vecB || vecA.length !== vecB.length) {
-        // console.error("Invalid vectors for cosine similarity", vecA, vecB);
-        return 0;
+      return 0; // 无效输入返回 0
     }
+    // 计算点积和模长的平方
     for (let i = 0; i < vecA.length; i++) {
       dotProduct += vecA[i] * vecB[i];
       normA += vecA[i] * vecA[i];
       normB += vecB[i] * vecB[i];
     }
+    // 计算模长
     normA = Math.sqrt(normA);
     normB = Math.sqrt(normB);
+    // 安全检查：防止除以 0
     if (normA === 0 || normB === 0) {
       return 0;
     }
+    // 返回余弦相似度
     return dotProduct / (normA * normB);
   }
 
+  /**
+   * 添加单个文档及其向量
+   * @param {object} document - 文档对象
+   * @param {Array<number>} embedding - 对应的向量
+   * @returns {number} 文档在数组中的索引
+   */
   addDocument(document, embedding) {
+    // 如果文档没有 ID，则生成一个唯一的 ID
     if (!document.id) {
       document.id = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
+    // 获取新文档的索引
     const index = this.documents.length;
+    // 添加到主存储
     this.documents.push(document);
     this.embeddings.push(embedding);
+    // 更新 ID 到索引的映射
     this.documentMap.set(document.id, index);
 
+    // 如果文档有关联的文件 ID，则更新文件到文档的映射
     if (document.metadata && document.metadata.fileId) {
       const fileId = String(document.metadata.fileId);
       if (!this.fileDocumentMap.has(fileId)) {
@@ -81,45 +114,68 @@ class HybridVectorStore {
       }
       this.fileDocumentMap.get(fileId).push(document.id);
     }
+    // 在线更新 LSH 和 K-Means 索引
     this.updateIndicesOnline(document, embedding);
+    // 增加重建计数器
     this.rebuildCounter++;
     return index;
   }
 
+  /**
+   * 批量添加文档（推荐方式，尤其是在添加来自同一文件的文档时）
+   * @param {Array<object>} documents - 文档对象数组
+   * @param {Array<Array<number>>} embeddings - 对应的向量数组
+   */
   async addDocuments(documents, embeddings) {
     if (documents.length !== embeddings.length) {
       throw new Error("文档数量与嵌入数量不匹配");
     }
+    // 如果这批文档来自同一个文件，先删除该文件之前可能存在的旧文档，确保更新
     if (documents.length > 0 && documents[0].metadata && documents[0].metadata.fileId) {
       const fileId = String(documents[0].metadata.fileId);
       console.log(`处理文件 ${fileId} 的文档，先删除旧文档（如果存在）`);
-      this.removeDocumentsByFileId(fileId); // 注意：这里是同步的，如果removeDocumentsByFileId 改为 async，需要 await
+      this.removeDocumentsByFileId(fileId); // 注意：这里是同步调用
     }
+    // 循环添加每个文档
     for (let i = 0; i < documents.length; i++) {
-      if (embeddings[i]) {
+      if (embeddings[i]) { // 确保向量存在
         this.addDocument(documents[i], embeddings[i]);
       }
     }
+    // 检查是否达到自动重建索引的阈值
     if (documents.length > 50 || this.rebuildCounter > this.autoRebuildThreshold) {
       console.log(`达到 addDocuments 重建阈值 (docs: ${documents.length}, counter: ${this.rebuildCounter})，将执行 rebuildIndices(false)`);
-      await this.rebuildIndices(false); // 默认不强制调优，但会使用 enableAutoTune
+      await this.rebuildIndices(false); // 触发重建，但不强制进行参数调优
     }
-    console.log(`批量添加了${documents.length}个文档到向量存储`);
+    console.log(`批量添加了 ${documents.length} 个文档到向量存储`);
   }
 
+  /**
+   * 在线（增量）更新 LSH 和 K-Means 索引
+   * @param {object} document - 文档对象
+   * @param {Array<number>} embedding - 对应的向量
+   */
   updateIndicesOnline(document, embedding) {
+    // 如果 LSH 启用，则添加向量到 LSH 索引
     if (this.enableLSH && this.lshIndex) {
       this.lshIndex.addVector(embedding, document.id);
     }
+    // 如果 K-Means 启用，则添加文档到 K-Means 索引（并可能更新中心）
     if (this.enableClustering && this.clusterIndex) {
       this.clusterIndex.addDocument(document, embedding);
     }
   }
 
+  /**
+   * 重建所有索引（LSH 和 K-Means）
+   * 这是一个耗时操作，但能确保索引的准确性和性能。
+   * @param {boolean} forceTune - 是否强制进行参数调优，即使之前已经调优过。
+   */
   async rebuildIndices(forceTune = false) {
     console.log(`开始重建混合索引... (forceTune: ${forceTune})`);
     const startTime = Date.now();
 
+    // 1. 筛选出所有未被删除的 "活跃" 文档和向量
     const activeDocuments = [];
     const activeEmbeddings = [];
     for (let i = 0; i < this.documents.length; i++) {
@@ -129,16 +185,18 @@ class HybridVectorStore {
       }
     }
 
-    // 重建LSH索引
+    // 2. 重建 LSH 索引
     if (this.enableLSH) {
+      // 获取 LSH 参数（优先使用调优后的，其次是现有的）
       let lshTables = this.lshIndex ? this.lshIndex.numHashTables : 16;
       let lshFuncs = this.lshIndex ? this.lshIndex.numHashFunctions : 8;
 
-      if (this.tunedLSHConfig) { // 优先使用 tune() 方法提供的LSH参数
+      if (this.tunedLSHConfig) {
         lshTables = this.tunedLSHConfig.numHashTables;
         lshFuncs = this.tunedLSHConfig.numHashFunctions;
         console.log(`使用 tune() 方法提供的 LSH 参数: Tables=${lshTables}, Functions=${lshFuncs}`);
       }
+      // 创建新的 LSH 实例并填充数据
       this.lshIndex = new LSHIndex(1024, lshTables, lshFuncs);
       if (activeDocuments.length > 0) {
         for (let i = 0; i < activeDocuments.length; i++) {
@@ -147,53 +205,73 @@ class HybridVectorStore {
           }
         }
       }
-      console.log('LSH索引重建完成');
+      console.log('LSH 索引重建完成');
     }
 
-    // 重建聚类索引
+    // 3. 重建 K-Means 聚类索引
     if (this.enableClustering && activeDocuments.length > 0) {
       let numClusters;
 
+      // 决定 K 值的复杂逻辑：
+      // a. 如果有调优过的 K 值，且不是强制调优，则使用它。
       if (this.tunedKValue !== null && this.tunedKValue !== undefined && !forceTune) {
         numClusters = this.tunedKValue;
         console.log(`使用 tune() 方法提供的 K = ${numClusters}`);
-        // this.tunedKValue = null; // 在 tune 方法调用完 rebuildIndices 后清除，或在 tune 方法开始时清除
-      } else if (this.clusterIndex && this.clusterIndex.numClusters > 0 && !forceTune && !this.enableAutoTune) {
+      }
+      // b. 如果没有调优值，不强制调优，且不自动调优，则使用现有的 K。
+      else if (this.clusterIndex && this.clusterIndex.numClusters > 0 && !forceTune && !this.enableAutoTune) {
         numClusters = this.clusterIndex.numClusters;
         console.log(`使用现有的聚类数量 K = ${numClusters} (非强制调优, 非自动调优)`);
-      } else if ((forceTune || this.enableAutoTune) && activeDocuments.length >= this.minDocsForTuning) {
-        console.log(`rebuildIndices: 启动K-Means参数自调优 (肘线法)... (forceTune: ${forceTune}, enableAutoTune: ${this.enableAutoTune})`);
+      }
+      // c. 如果强制调优或自动调优开启，且文档数足够，则运行肘线法。
+      else if ((forceTune || this.enableAutoTune) && activeDocuments.length >= this.minDocsForTuning) {
+        console.log(`rebuildIndices: 启动K-Means参数自调优 (肘线法)...`);
         try {
-          const tuner = new ClusterIndex();
+          const tuner = new ClusterIndex(); // 创建临时实例进行调优
           numClusters = await tuner.tune(activeEmbeddings);
           console.log(`rebuildIndices: K-Means自调优完成，最佳聚类数量 K = ${numClusters}`);
         } catch (tuneError) {
           console.error('rebuildIndices: K-Means参数调优失败，将使用动态调整值:', tuneError);
+          // 调优失败时的备用 K 值计算
           numClusters = Math.max(1, Math.min(128, Math.ceil(activeDocuments.length / 20)));
         }
-      } else if (activeDocuments.length < this.minDocsForTuning) {
+      }
+      // d. 如果文档数不足，则动态计算 K 值。
+      else if (activeDocuments.length < this.minDocsForTuning) {
         console.log(`文档数量 (${activeDocuments.length}) 少于 ${this.minDocsForTuning} (K-Means)，跳过调优，使用动态调整。`);
         numClusters = Math.max(1, Math.min(128, Math.ceil(activeDocuments.length / 20)));
-      } else {
+      }
+      // e. 其他情况（例如从未设置 K），也动态计算。
+      else {
         console.log('未启用K-Means调优或条件不满足，使用动态调整的 K 值。');
         numClusters = (this.clusterIndex && this.clusterIndex.numClusters > 0) ? this.clusterIndex.numClusters : Math.max(1, Math.min(128, Math.ceil(activeDocuments.length / 20)));
       }
-      
+
+      // 确保 K 值至少为 1
       numClusters = Math.max(1, numClusters);
 
+      // 创建新的 K-Means 实例并运行聚类
       this.clusterIndex = new ClusterIndex({ numClusters });
       this.clusterIndex.performClustering(activeDocuments, activeEmbeddings);
       console.log(`聚类索引重建完成, ${this.clusterIndex.clusterCenters.length} 个聚类`);
     } else if (this.enableClustering) {
+      // 如果启用聚类但没有活跃文档，则重置索引。
       this.clusterIndex = new ClusterIndex({ numClusters: 0 });
       console.log('没有活跃文档，聚类索引已重置。');
     }
 
+    // 4. 重置重建计数器并记录时间
     this.rebuildCounter = 0;
     const rebuildTime = Date.now() - startTime;
     console.log(`索引重建完成，耗时: ${rebuildTime}ms, 活跃文档: ${activeDocuments.length}`);
   }
 
+  /**
+   * （物理）删除指定文件 ID 关联的所有文档
+   * 注意：这是一个耗时的操作，因为它会重建主存储数组。
+   * @param {string|number} fileId - 要删除的文件 ID
+   * @returns {number} 被删除的文档数量
+   */
   removeDocumentsByFileId(fileId) {
     const fileIdStr = String(fileId);
     const documentIds = this.fileDocumentMap.get(fileIdStr) || [];
@@ -204,6 +282,7 @@ class HybridVectorStore {
     const newDocumentMap = new Map();
     let removedCount = 0;
 
+    // 遍历所有文档，只保留那些不属于要删除文件 ID 的文档
     for (let i = 0; i < this.documents.length; i++) {
       const doc = this.documents[i];
       if (!documentIds.includes(doc.id)) {
@@ -211,22 +290,34 @@ class HybridVectorStore {
         newEmbeddings.push(this.embeddings[i]);
         newDocumentMap.set(doc.id, newDocuments.length - 1);
       } else {
+        // 对于被删除的文档，尝试从 LSH 和 K-Means 中在线移除 (如果支持)
+        // 注意：这部分可能在后续重建时变得多余，但可以提供一些即时性
         if (this.enableLSH && this.lshIndex) this.lshIndex.removeVector(doc.id);
         if (this.enableClustering && this.clusterIndex) this.clusterIndex.removeDocument(doc.id);
         removedCount++;
       }
     }
+    // 更新主存储和映射
     this.documents = newDocuments;
     this.embeddings = newEmbeddings;
     this.documentMap = newDocumentMap;
+    // 从文件映射中删除该文件 ID
     this.fileDocumentMap.delete(fileIdStr);
-    console.log(`物理删除了${removedCount}个文档（文件ID: ${fileId}）`);
+    console.log(`物理删除了 ${removedCount} 个文档（文件ID: ${fileId}）`);
     return removedCount;
   }
 
+  /**
+   * 标记指定文件 ID 关联的所有文档为“已删除”（软删除）
+   * 这种方式比物理删除快，但被删除的文档仍在存储中，直到 `purgeDeletedDocuments` 被调用。
+   * 搜索时会跳过这些文档。
+   * @param {string|number} fileId - 文件 ID
+   * @returns {number} 被标记的数量
+   */
   markDocumentsAsDeleted(fileId) {
     let deletedCount = 0;
     const fileIdStr = String(fileId);
+    // 遍历所有文档，找到匹配文件 ID 的，并将其 ID 添加到 deletedDocuments 集合中
     for (const doc of this.documents) {
       if (doc.metadata && String(doc.metadata.fileId) === fileIdStr) {
         if (!this.deletedDocuments.has(doc.id)) {
@@ -235,10 +326,13 @@ class HybridVectorStore {
         }
       }
     }
-    console.log(`标记了${deletedCount}个来自文件${fileId}的文档为已删除`);
+    console.log(`标记了 ${deletedCount} 个来自文件 ${fileId} 的文档为已删除`);
     return deletedCount;
   }
 
+  /**
+   * 清理（物理删除）所有被标记为“已删除”的文档，并重建索引。
+   */
   async purgeDeletedDocuments() {
     if (this.deletedDocuments.size === 0) {
       console.log("没有已标记为删除的文档需要清理。");
@@ -249,6 +343,7 @@ class HybridVectorStore {
     const newDocumentMap = new Map();
     let purgedCount = 0;
 
+    // 遍历所有文档，只保留那些不在 deletedDocuments 集合中的文档
     for (let i = 0; i < this.documents.length; i++) {
       const doc = this.documents[i];
       if (!this.deletedDocuments.has(doc.id)) {
@@ -257,6 +352,7 @@ class HybridVectorStore {
         newDocumentMap.set(doc.id, newDocuments.length - 1);
       } else {
         purgedCount++;
+        // 同时清理 fileDocumentMap
         if (doc.metadata && doc.metadata.fileId) {
           const fileIdStr = String(doc.metadata.fileId);
           const docIdsInFile = this.fileDocumentMap.get(fileIdStr);
@@ -268,22 +364,32 @@ class HybridVectorStore {
         }
       }
     }
+    // 更新主存储和映射
     this.documents = newDocuments;
     this.embeddings = newEmbeddings;
     this.documentMap = newDocumentMap;
+    // 清空软删除集合
     this.deletedDocuments.clear();
+    // 清理后必须重建索引
     await this.rebuildIndices(false);
-    console.log(`物理删除了${purgedCount}个文档`);
+    console.log(`物理删除了 ${purgedCount} 个文档`);
     return purgedCount;
   }
 
+  /**
+   * 执行相似性搜索
+   * @param {Array<number>} queryEmbedding - 查询向量
+   * @param {number} k - 希望返回的结果数量
+   * @returns {Array<object>} 相似度最高的 K 个结果，每个结果包含 { document, similarity }
+   */
   similaritySearch(queryEmbedding, k = 5) {
     const startTime = Date.now();
     if (!this.embeddings || this.embeddings.length === 0) return [];
 
-    this.searchStats.totalSearches++;
-    let lshCandidateSet = new Set();
+    this.searchStats.totalSearches++; // 增加搜索次数统计
+    let lshCandidateSet = new Set(); // LSH 候选集
 
+    // 1. LSH 阶段 (如果启用)
     if (this.enableLSH && this.lshIndex && this.documents.length > 100) {
       const candidateIds = this.lshIndex.getCandidates(queryEmbedding);
       candidateIds.forEach(id => lshCandidateSet.add(id));
@@ -292,17 +398,24 @@ class HybridVectorStore {
       console.log('[流水线] LSH 未启用、无索引或文档数不足。');
     }
 
-    let results = [];
-    const searchedIds = new Set();
+    let results = []; // 存储初步结果
+    const searchedIds = new Set(); // 存储已经处理过的文档ID，避免重复计算
 
+    // 2. K-Means 阶段 (如果启用)
     if (this.enableClustering && this.clusterIndex && this.clusterIndex.clusterCenters && this.clusterIndex.clusterCenters.length > 0) {
       console.log('[流水线] K-means 已启用，开始聚类搜索...');
+      // 确定要搜索的簇数量 (最多 10 个或实际簇数)
       const numClustersToSearch = Math.min(10, this.clusterIndex.clusterCenters.length);
+      // 找到与查询最相似的几个簇
       const topClusters = this.findTopClusters(queryEmbedding, numClustersToSearch);
       console.log(`[流水线] 定位到 Top ${topClusters.length} 个聚类`);
+      // 在这些簇内进行搜索
       for (const clusterId of topClusters) {
+        // 在每个簇内搜索 k*10 个结果，以提高召回率
         const clusterResults = this.clusterIndex.searchInCluster(clusterId, queryEmbedding, k * 10);
+        // 处理簇内搜索结果
         for (const result of clusterResults) {
+          // 跳过已删除或已处理的文档
           if (this.deletedDocuments.has(result.document.id) || searchedIds.has(result.document.id)) continue;
           results.push(result);
           searchedIds.add(result.document.id);
@@ -310,14 +423,17 @@ class HybridVectorStore {
       }
       console.log(`[流水线] K-means 搜索得到 ${results.length} 个结果`);
     } else {
-       console.log('[流水线] K-means 未启用、无索引或无聚类数据。');
+      console.log('[流水线] K-means 未启用、无索引或无聚类数据。');
     }
 
+    // 3. 补充搜索阶段 (如果结果不足 K)
     if (results.length < k && this.documents.length > 0) {
       console.log(`[流水线] 结果不足 (${results.length}/${k})，执行 O(n) 补充搜索...`);
       const additionalSimilarities = [];
+      // 遍历所有文档
       for (let i = 0; i < this.documents.length; i++) {
         const docId = this.documents[i].id;
+        // 只对那些未被 K-Means 搜索到且未被删除的文档进行计算
         if (!searchedIds.has(docId) && !this.deletedDocuments.has(docId)) {
           if (this.embeddings[i] && queryEmbedding) {
             const similarity = this.cosineSimilarity(queryEmbedding, this.embeddings[i]);
@@ -325,43 +441,77 @@ class HybridVectorStore {
           }
         }
       }
+      // 将补充结果添加到总结果中
       results.push(...additionalSimilarities);
       console.log(`[流水线] O(n) 补充后总共 ${results.length} 个结果`);
     }
 
+    // 4. 结果去重与最终排序
     const uniqueResultsMap = new Map();
+    // 使用 Map 去重，确保每个文档只出现一次，并保留最高相似度
     results.forEach(res => {
       if (!uniqueResultsMap.has(res.document.id) || uniqueResultsMap.get(res.document.id).similarity < res.similarity) {
         uniqueResultsMap.set(res.document.id, res);
       }
     });
-    const finalResults = Array.from(uniqueResultsMap.values()).sort((a, b) => b.similarity - a.similarity).slice(0, k);
+    // 将 Map 转回数组，按相似度降序排序，并取前 k 个
+    const finalResults = Array.from(uniqueResultsMap.values())
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, k);
+
+    // 记录搜索时间和日志
     const searchTime = Date.now() - startTime;
     this.searchStats.searchTime += searchTime;
     console.log(`[流水线] 优化后混合搜索完成，耗时: ${searchTime}ms, 返回 ${finalResults.length} 个结果`);
     return finalResults;
   }
 
+  /**
+   * 查找与查询向量最相似的 Top K 个聚类中心
+   * @param {Array<number>} queryEmbedding - 查询向量
+   * @param {number} topK - 希望返回的聚类数量
+   * @returns {Array<number>} 最相似的 K 个聚类中心的 ID 列表
+   */
   findTopClusters(queryEmbedding, topK) {
     const clusterSimilarities = [];
+    // 检查聚类索引和中心是否存在
     if (!this.clusterIndex || !this.clusterIndex.clusterCenters || this.clusterIndex.clusterCenters.length === 0) return [];
+    // 遍历所有聚类中心
     for (let i = 0; i < this.clusterIndex.clusterCenters.length; i++) {
       const center = this.clusterIndex.clusterCenters[i];
+      // 检查中心有效且维度匹配
       if (center && center.length === queryEmbedding.length) {
+        // 计算查询与中心的余弦相似度
         const similarity = this.cosineSimilarity(queryEmbedding, center);
         clusterSimilarities.push({ clusterId: i, similarity });
       }
     }
-    return clusterSimilarities.sort((a, b) => b.similarity - a.similarity).slice(0, topK).map(item => item.clusterId);
+    // 按相似度排序并返回 Top K 个 clusterId
+    return clusterSimilarities
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, topK)
+      .map(item => item.clusterId);
   }
 
+  /**
+   * 恢复被标记为“已删除”的文档（反软删除）
+   * @param {string|number} fileId - 要恢复的文件 ID
+   * @returns {number} 恢复的文档数量
+   */
   restoreDocuments(fileId) {
     let restoredCount = 0;
     const fileIdStr = String(fileId);
     const idsToRestore = [];
 
+    // 遍历 deletedDocuments 集合，找到属于该 fileId 的文档 ID
     this.deletedDocuments.forEach(docId => {
-      const docIndex = this.documentMap.get(docId);
+      const docIndex = this.documentMap.get(docId); // 需要检查 documentMap 是否是最新的
+      // 这里有个潜在问题：如果文档被物理删除后，documentMap 可能不包含这个 ID。
+      // 这个函数应该只用于软删除的恢复。
+      // 更好的做法可能是直接遍历 this.documents，检查 metadata 和 deletedDocuments 集合。
+      // 当前实现依赖于 docId 仍在 documentMap 中，这可能不总是成立。
+      // 调整后的逻辑: 直接遍历 deletedDocuments 并查找其在 documents 中的信息。
+      // 假设即使软删除，documentMap 仍然保留 ID (当前实现是这样)
       if (docIndex !== undefined && this.documents[docIndex]) {
         const doc = this.documents[docIndex];
         if (doc.metadata && String(doc.metadata.fileId) === fileIdStr) {
@@ -370,49 +520,61 @@ class HybridVectorStore {
       }
     });
 
+    // 从 deletedDocuments 集合中移除这些 ID
     idsToRestore.forEach(docId => {
-        this.deletedDocuments.delete(docId);
-        restoredCount++;
+      this.deletedDocuments.delete(docId);
+      restoredCount++;
     });
 
-    console.log(`恢复了${restoredCount}个来自文件${fileId}的文档`);
+    console.log(`恢复了 ${restoredCount} 个来自文件 ${fileId} 的文档`);
     return restoredCount;
   }
 
+  /**
+   * 保存当前向量存储的状态到文件
+   */
   async save() {
+    // 准备要保存的数据对象
     const data = {
-      version: '2.2.1', // Minor update for logic refinement
+      version: '2.2.1', // 版本号，方便未来升级
       documents: this.documents,
       embeddings: this.embeddings,
-      deletedDocuments: Array.from(this.deletedDocuments),
-      fileDocumentMap: Array.from(this.fileDocumentMap.entries()),
+      deletedDocuments: Array.from(this.deletedDocuments), // 将 Set 转为 Array
+      fileDocumentMap: Array.from(this.fileDocumentMap.entries()), // 将 Map 转为 Array of [key, value]
       lshIndex: (this.enableLSH && this.lshIndex) ? this.lshIndex.toJSON() : null,
       clusterIndex: (this.enableClustering && this.clusterIndex) ? this.clusterIndex.toJSON() : null,
-      config: {
+      config: { // 保存配置信息
         enableLSH: this.enableLSH,
         enableClustering: this.enableClustering,
         autoRebuildThreshold: this.autoRebuildThreshold,
         enableAutoTune: this.enableAutoTune,
         minDocsForTuning: this.minDocsForTuning,
         tunedLSHConfig: this.tunedLSHConfig || null,
-        // numClusters is stored within clusterIndex.toJSON()
       },
-      stats: this.searchStats,
-      savedAt: new Date().toISOString()
+      stats: this.searchStats, // 保存统计信息
+      savedAt: new Date().toISOString() // 保存时间戳
     };
     try {
+      // 确保目录存在
       await fs.ensureDir(path.dirname(this.storePath));
+      // 将数据以 JSON 格式写入文件 (带缩进)
       await fs.writeJson(this.storePath, data, { spaces: 2 });
       console.log(`混合向量存储保存至: ${this.storePath}`);
-    } catch(error) {
+    } catch (error) {
       console.error(`保存向量存储失败: ${error.message}`);
       throw error;
     }
   }
 
+  /**
+   * 从文件加载向量存储的状态
+   * @returns {Promise<boolean>} 是否加载成功
+   */
   async load() {
+    // 检查文件是否存在
     if (!(await fs.pathExists(this.storePath))) {
       console.log(`向量存储文件不存在: ${this.storePath}, 将创建一个新的空存储。`);
+      // 如果不存在，则使用默认值初始化
       this.lshIndex = new LSHIndex(1024, 16, 8);
       this.clusterIndex = new ClusterIndex({ numClusters: 128 });
       this.tunedLSHConfig = null;
@@ -420,20 +582,25 @@ class HybridVectorStore {
       return false;
     }
     try {
+      // 读取 JSON 文件
       const data = await fs.readJson(this.storePath, { encoding: 'utf8' });
+      // 加载基本数据
       this.documents = data.documents || [];
       this.embeddings = data.embeddings || [];
       this.deletedDocuments = new Set(data.deletedDocuments || []);
+      // 重建 documentMap
       this.documentMap.clear();
       for (let i = 0; i < this.documents.length; i++) {
         this.documentMap.set(this.documents[i].id, i);
       }
+      // 加载或重建 fileDocumentMap
       if (data.fileDocumentMap) {
         this.fileDocumentMap = new Map(data.fileDocumentMap);
       } else {
-        this.rebuildFileDocumentMap();
+        this.rebuildFileDocumentMap(); // 兼容旧版本
       }
 
+      // 加载配置
       if (data.config) {
         this.enableLSH = data.config.enableLSH !== false;
         this.enableClustering = data.config.enableClustering !== false;
@@ -441,7 +608,8 @@ class HybridVectorStore {
         this.enableAutoTune = data.config.enableAutoTune !== false;
         this.minDocsForTuning = data.config.minDocsForTuning || 100;
         this.tunedLSHConfig = data.config.tunedLSHConfig || null;
-      } else { // Default config if not present
+      } else {
+        // 如果没有配置，使用默认值
         this.enableLSH = true;
         this.enableClustering = true;
         this.autoRebuildThreshold = 1000;
@@ -450,10 +618,10 @@ class HybridVectorStore {
         this.tunedLSHConfig = null;
       }
 
-
+      // 加载统计信息
       if (data.stats) this.searchStats = { ...this.searchStats, ...data.stats };
 
-      // Initialize or load LSHIndex
+      // 加载或初始化 LSH 索引
       if (data.lshIndex && this.enableLSH) {
         this.lshIndex = LSHIndex.fromJSON(data.lshIndex);
         console.log('LSH索引加载完成');
@@ -465,13 +633,13 @@ class HybridVectorStore {
         this.lshIndex = null;
       }
 
-      // Initialize or load ClusterIndex
+      // 加载或初始化 K-Means 索引
       if (data.clusterIndex && this.enableClustering) {
         this.clusterIndex = ClusterIndex.fromJSON(data.clusterIndex);
         console.log('聚类索引加载完成');
-        this.tunedKValue = this.clusterIndex.numClusters; // Store loaded K as potentially "tuned"
+        this.tunedKValue = this.clusterIndex.numClusters; // 将加载的 K 值视为"已调优"
       } else if (this.enableClustering) {
-        this.clusterIndex = new ClusterIndex({ numClusters: 128 }); // Default if not in JSON
+        this.clusterIndex = new ClusterIndex({ numClusters: 128 });
         this.tunedKValue = 128;
         console.log('聚类索引从默认值初始化。');
       } else {
@@ -479,11 +647,12 @@ class HybridVectorStore {
         this.tunedKValue = null;
       }
 
-      console.log(`成功加载${this.documents.length}个文档和嵌入向量`);
-      console.log(`其中${this.deletedDocuments.size}个文档被标记为已删除`);
+      console.log(`成功加载 ${this.documents.length} 个文档和嵌入向量`);
+      console.log(`其中 ${this.deletedDocuments.size} 个文档被标记为已删除`);
       return true;
     } catch (error) {
       console.error("加载向量存储失败:", error);
+      // 加载失败时，也进行默认初始化，防止系统崩溃
       this.lshIndex = new LSHIndex(1024, 16, 8);
       this.clusterIndex = new ClusterIndex({ numClusters: 128 });
       this.tunedLSHConfig = null;
@@ -492,6 +661,9 @@ class HybridVectorStore {
     }
   }
 
+  /**
+   * 重建文件到文档 ID 的映射（主要用于从旧版本加载数据时）
+   */
   rebuildFileDocumentMap() {
     this.fileDocumentMap.clear();
     this.documents.forEach(doc => {
@@ -503,24 +675,28 @@ class HybridVectorStore {
         this.fileDocumentMap.get(fileIdStr).push(doc.id);
       }
     });
-    console.log(`重建文件映射完成，共${this.fileDocumentMap.size}个文件`);
+    console.log(`重建文件映射完成，共 ${this.fileDocumentMap.size} 个文件`);
   }
 
+  /**
+   * 获取当前的统计信息
+   * @returns {object} 包含各种统计数据的对象
+   */
   getStats() {
-    // ... (stats logic, ensure this.clusterIndex and this.lshIndex are checked for null)
-    const lshStats = (this.enableLSH && this.lshIndex) ? this.lshIndex.getStats() : {note: "LSH disabled or not initialized"};
-    const clusterData = (this.enableClustering && this.clusterIndex) ? this.clusterIndex.getClustersStats() : {note: "Clustering disabled or not initialized"};
+    // 获取 LSH 和 K-Means 的统计信息 (检查是否为空)
+    const lshStats = (this.enableLSH && this.lshIndex) ? this.lshIndex.getStats() : { note: "LSH disabled or not initialized" };
+    const clusterData = (this.enableClustering && this.clusterIndex) ? this.clusterIndex.getClustersStats() : { note: "Clustering disabled or not initialized" };
 
+    // 返回一个包含整体和子索引统计信息的对象
     return {
       version: '2.2.1',
       totalDocuments: this.documents.length,
       activeDocuments: this.documents.length - this.deletedDocuments.size,
       deletedDocuments: this.deletedDocuments.size,
       filesCount: this.fileDocumentMap.size,
-      // ...
       lshStats,
       clusterStats: clusterData,
-      config: {
+      config: { // 返回当前配置
         enableLSH: this.enableLSH,
         enableClustering: this.enableClustering,
         autoRebuildThreshold: this.autoRebuildThreshold,
@@ -532,11 +708,16 @@ class HybridVectorStore {
     };
   }
 
+  /**
+   * 执行强制的 LSH 和 K-Means 参数调优，并重建索引。
+   */
   async tune() {
     console.log('开始强制性能调优...');
-    this.tunedKValue = null; // Reset before tuning
-    this.tunedLSHConfig = null; // Reset before tuning
+    // 重置已调优的参数，准备重新计算
+    this.tunedKValue = null;
+    this.tunedLSHConfig = null;
 
+    // 获取活跃文档
     const activeDocuments = [];
     const activeEmbeddings = [];
     for (let i = 0; i < this.documents.length; i++) {
@@ -546,13 +727,13 @@ class HybridVectorStore {
       }
     }
 
+    // 检查文档数量是否足够
     if (activeDocuments.length < this.minDocsForTuning) {
       console.warn(`文档数量 (${activeDocuments.length}) 太少 (少于 ${this.minDocsForTuning})，无法进行有意义的调优。将使用默认参数重建。`);
-      // Set default K if clustering enabled, otherwise LSH rebuilds with its defaults
       if (this.enableClustering) {
         this.tunedKValue = Math.max(1, Math.min(128, Math.ceil(activeDocuments.length / 20)));
       }
-      await this.rebuildIndices(false); // Rebuild with defaults or calculated K
+      await this.rebuildIndices(false); // 使用计算出的 K 或 LSH 默认值重建
       console.log('性能调优因数据不足而跳过，已使用默认参数重建。');
       return;
     }
@@ -564,88 +745,94 @@ class HybridVectorStore {
       const tuner = new ClusterIndex();
       kMeansTunedKForRebuild = await tuner.tune(activeEmbeddings);
       console.log(`K-Means 调优完成，最佳 K = ${kMeansTunedKForRebuild}`);
-      this.tunedKValue = kMeansTunedKForRebuild; // Store for rebuildIndices
+      this.tunedKValue = kMeansTunedKForRebuild; // 存储结果，供 rebuildIndices 使用
     }
 
-    // 2. LSH 调优
-    let bestLSHConfig = {
+    // 2. LSH 调优 (这是一个启发式过程)
+    let bestLSHConfig = { // 默认值
       numHashTables: this.lshIndex ? this.lshIndex.numHashTables : 16,
       numHashFunctions: this.lshIndex ? this.lshIndex.numHashFunctions : 8,
     };
     if (this.enableLSH && activeEmbeddings.length > 0) {
       console.log('LSH 参数调优...');
-      const numHashTablesOptions = [8, 16, 32, 48]; // Adjusted options
-      const numHashFunctionsOptions = [6, 10, 14, 18, 22]; // Adjusted options
-      const sampleSize = Math.min(100, Math.floor(activeEmbeddings.length * 0.1), 300); // Adjusted sample
-      
+      // 定义 LSH 参数的候选范围
+      const numHashTablesOptions = [8, 16, 32, 48];
+      const numHashFunctionsOptions = [6, 10, 14, 18, 22];
+      // 随机抽取一部分向量作为查询样本
+      const sampleSize = Math.min(100, Math.floor(activeEmbeddings.length * 0.1), 300);
       const shuffledEmbeddings = [...activeEmbeddings].sort(() => 0.5 - Math.random());
       const sampleQueryEmbeddings = shuffledEmbeddings.slice(0, sampleSize);
 
       let currentBestAvgCandidates = Infinity;
       let foundSuitableLSH = false;
 
-      // Adjusted target candidate range
+      // 定义 LSH 调优的目标候选数量范围
       const kForLSHHeuristic = kMeansTunedKForRebuild > 0 ? kMeansTunedKForRebuild : (this.clusterIndex ? this.clusterIndex.numClusters : 30);
       let targetMinCandidates = Math.max(10, Math.floor(activeEmbeddings.length * 0.005), kForLSHHeuristic);
       let targetMaxCandidates = Math.min(300, Math.floor(activeEmbeddings.length * 0.08), kForLSHHeuristic * 10);
       if (targetMinCandidates > targetMaxCandidates) targetMinCandidates = Math.max(10, Math.floor(targetMaxCandidates / 2));
-
-
       console.log(`LSH 调优目标候选范围: [${targetMinCandidates} - ${targetMaxCandidates}]`);
 
+      // 遍历所有参数组合 (网格搜索)
       for (const tables of numHashTablesOptions) {
         for (const funcs of numHashFunctionsOptions) {
+          // 剪枝：避免过于庞大的 LSH 配置
           if (tables * funcs > 256 && tables * funcs > activeEmbeddings.length * 0.5) continue;
 
           console.log(`  测试 LSH: Tables=${tables}, Functions=${funcs}`);
+          // 创建临时 LSH 索引
           const tempLSHIndex = new LSHIndex(1024, tables, funcs);
           activeEmbeddings.forEach((emb, idx) => {
-            if (activeDocuments[idx] && emb) { // Ensure doc and emb exist
+            if (activeDocuments[idx] && emb) {
               tempLSHIndex.addVector(emb, activeDocuments[idx].id);
             }
           });
 
+          // 使用样本查询测试 LSH 性能
           let totalCandidates = 0;
           if (sampleQueryEmbeddings.length > 0) {
             for (const queryEmb of sampleQueryEmbeddings) {
-              if(queryEmb) { // Ensure query embedding is valid
+              if (queryEmb) {
                 const candidates = tempLSHIndex.getCandidates(queryEmb);
                 totalCandidates += candidates.length;
               }
             }
             const avgCandidates = totalCandidates / sampleQueryEmbeddings.length;
-            console.log(`    平均候选者数量: ${avgCandidates.toFixed(2)}`);
+            console.log(`      平均候选者数量: ${avgCandidates.toFixed(2)}`);
 
+            // 检查平均候选数量是否在目标范围内
             if (avgCandidates >= targetMinCandidates && avgCandidates <= targetMaxCandidates) {
+              // 如果在范围内，且比当前最好的还好，则更新
               if (!foundSuitableLSH || avgCandidates < currentBestAvgCandidates) {
                 currentBestAvgCandidates = avgCandidates;
                 bestLSHConfig = { numHashTables: tables, numHashFunctions: funcs };
                 foundSuitableLSH = true;
               }
             } else if (!foundSuitableLSH && avgCandidates > targetMaxCandidates && avgCandidates < currentBestAvgCandidates) {
+              // 如果还没找到合适的，且当前这个虽然大了点但比之前的好，也暂时选它
               currentBestAvgCandidates = avgCandidates;
               bestLSHConfig = { numHashTables: tables, numHashFunctions: funcs };
             }
           }
         }
       }
-      if (foundSuitableLSH || currentBestAvgCandidates !== Infinity) { // Take best found even if not "ideal"
+      // 输出 LSH 调优结果
+      if (foundSuitableLSH || currentBestAvgCandidates !== Infinity) {
         console.log(`LSH 参数调优完成，选择配置: Tables=${bestLSHConfig.numHashTables}, Functions=${bestLSHConfig.numHashFunctions}, 平均候选者: ${currentBestAvgCandidates.toFixed(2)}`);
       } else {
         console.log('LSH 参数调优未能找到理想配置，将保留或使用默认。');
       }
+      // 存储结果，供 rebuildIndices 使用
       this.tunedLSHConfig = bestLSHConfig;
     }
 
     // 3. 使用调优后的参数重建索引
     console.log(`Tune 方法完成，将使用 K=${this.tunedKValue} 和 LSH 配置调用 rebuildIndices(false)`);
-    await this.rebuildIndices(false); // forceTune is false, it will use this.tunedKValue
-
-    // Clear the temporary tunedKValue after rebuildIndices has used it
-    // this.tunedKValue = null; // Already cleared inside rebuildIndices if used
+    await this.rebuildIndices(false); // 调用重建，它会使用我们刚刚设置的 tuned 值
 
     console.log('性能调优完成');
   }
 }
 
+// 导出 HybridVectorStore 类
 module.exports = HybridVectorStore;

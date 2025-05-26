@@ -24,14 +24,14 @@ class EmbeddingService {
       this.embeddingCache = await this._loadCache();
   }
 
-  // 加载向量缓存 (异步)
+  // 加载向量缓存
   async _loadCache() {
     const cacheFile = path.join(this.cacheDir, 'embedding-cache.json');
     // 使用 fs.pathExists (异步) 替代 existsSync
     if (await fs.pathExists(cacheFile)) {
       try {
         console.log('加载嵌入缓存...');
-        // 使用 fs.readJson (异步, 更方便) 替代 readFileSync + JSON.parse
+        // 使用 fs.readJson (异步) 替代 readFileSync + JSON.parse
         const cache = await fs.readJson(cacheFile, { encoding: 'utf8' });
         console.log(`成功加载${Object.keys(cache).length}个缓存向量`);
         return cache;
@@ -42,11 +42,11 @@ class EmbeddingService {
     return {};
   }
 
-  // 保存向量缓存 (异步)
+  // 保存向量缓存
   async _saveCache() {
     const cacheFile = path.join(this.cacheDir, 'embedding-cache.json');
     try {
-      // 使用 fs.writeJson (异步, 更方便) 替代 writeFileSync + JSON.stringify
+      // 使用 fs.writeJson (异步) 替代 writeFileSync + JSON.stringify
       await fs.writeJson(cacheFile, this.embeddingCache, { spaces: 2 }); // 添加 spaces: 2 增加可读性
       console.log(
         `缓存保存成功，共${Object.keys(this.embeddingCache).length}个向量`
@@ -84,9 +84,9 @@ class EmbeddingService {
       // 更新缓存
       this.embeddingCache[hash] = embedding;
 
-      // 每处理10个新向量保存一次缓存 (异步保存)
+      // 每处理10个新向量保存一次缓存
       if (Object.keys(this.embeddingCache).length % 10 === 0) {
-        await this._saveCache(); // <--- 修改: 使用 await
+        await this._saveCache();
       }
 
       return embedding;
@@ -96,7 +96,7 @@ class EmbeddingService {
     }
   }
 
-  // 批量获取嵌入 (已经是异步, 但需要 await _saveCache)
+  // 批量获取嵌入
   async getBatchEmbeddings(texts, batchSize = 10) {
     console.log(`处理${texts.length}个文本批次，每批${batchSize}个`);
 
@@ -169,17 +169,19 @@ class EmbeddingService {
 
       // 保存更新后的缓存 (如果 getEmbedding 没有保存)
       if (!saved) {
-        await this._saveCache(); // <--- 修改: 使用 await
+        await this._saveCache();
       }
     }
 
     return results;
   }
 
-  // 关闭服务 (异步)
+  // 关闭服务
   async close() {
-    await this._saveCache(); // <--- 修改: 使用 await
+    await this._saveCache();
   }
 }
 
-module.exports = EmbeddingService;
+// module.exports = EmbeddingService;
+
+module.exports = new EmbeddingService();
