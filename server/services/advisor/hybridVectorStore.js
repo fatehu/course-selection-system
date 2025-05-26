@@ -34,8 +34,8 @@ class HybridVectorStore {
 
     // --- 性能与行为配置 ---
     this.lshThreshold = 0.1; // LSH 候选筛选阈值 (目前在 searchInCluster 中未使用，可能为未来预留)
-    this.enableLSH = true; // 是否启用 LSH 索引
-    this.enableClustering = true; // 是否启用 K-Means 聚类索引
+    this.enableLSH = false; // 是否启用 LSH 索引
+    this.enableClustering = false; // 是否启用 K-Means 聚类索引
     this.autoRebuildThreshold = 1000; // 自动触发重建索引的文档变动次数阈值
     this.rebuildCounter = 0; // 文档变动（添加）计数器
     this.enableAutoTune = true; // 控制 rebuildIndices 是否在非强制调优时自动进行 K-Means 调优
@@ -382,88 +382,225 @@ class HybridVectorStore {
    * @param {number} k - 希望返回的结果数量
    * @returns {Array<object>} 相似度最高的 K 个结果，每个结果包含 { document, similarity }
    */
-  similaritySearch(queryEmbedding, k = 5) {
-    const startTime = Date.now();
-    if (!this.embeddings || this.embeddings.length === 0) return [];
+  // similaritySearch(queryEmbedding, k = 5) {
+  //   const startTime = Date.now();
+  //   if (!this.embeddings || this.embeddings.length === 0) return [];
 
-    this.searchStats.totalSearches++; // 增加搜索次数统计
-    let lshCandidateSet = new Set(); // LSH 候选集
+  //   this.searchStats.totalSearches++; // 增加搜索次数统计
+  //   let lshCandidateSet = new Set(); // LSH 候选集
 
-    // 1. LSH 阶段 (如果启用)
-    if (this.enableLSH && this.lshIndex && this.documents.length > 100) {
-      const candidateIds = this.lshIndex.getCandidates(queryEmbedding);
-      candidateIds.forEach(id => lshCandidateSet.add(id));
-      console.log(`[流水线] LSH 筛选出 ${lshCandidateSet.size} 个潜在候选`);
-    } else {
-      console.log('[流水线] LSH 未启用、无索引或文档数不足。');
-    }
+  //   // 1. LSH 阶段 (如果启用)
+  //   if (this.enableLSH && this.lshIndex && this.documents.length > 100) {
+  //     const candidateIds = this.lshIndex.getCandidates(queryEmbedding);
+  //     candidateIds.forEach(id => lshCandidateSet.add(id));
+  //     console.log(`[流水线] LSH 筛选出 ${lshCandidateSet.size} 个潜在候选`);
+  //   } else {
+  //     console.log('[流水线] LSH 未启用、无索引或文档数不足。');
+  //   }
 
-    let results = []; // 存储初步结果
-    const searchedIds = new Set(); // 存储已经处理过的文档ID，避免重复计算
+  //   let results = []; // 存储初步结果
+  //   const searchedIds = new Set(); // 存储已经处理过的文档ID，避免重复计算
 
-    // 2. K-Means 阶段 (如果启用)
-    if (this.enableClustering && this.clusterIndex && this.clusterIndex.clusterCenters && this.clusterIndex.clusterCenters.length > 0) {
-      console.log('[流水线] K-means 已启用，开始聚类搜索...');
-      // 确定要搜索的簇数量 (最多 10 个或实际簇数)
-      const numClustersToSearch = Math.min(10, this.clusterIndex.clusterCenters.length);
-      // 找到与查询最相似的几个簇
-      const topClusters = this.findTopClusters(queryEmbedding, numClustersToSearch);
-      console.log(`[流水线] 定位到 Top ${topClusters.length} 个聚类`);
-      // 在这些簇内进行搜索
-      for (const clusterId of topClusters) {
-        // 在每个簇内搜索 k*10 个结果，以提高召回率
-        const clusterResults = this.clusterIndex.searchInCluster(clusterId, queryEmbedding, k * 10);
-        // 处理簇内搜索结果
-        for (const result of clusterResults) {
-          // 跳过已删除或已处理的文档
-          if (this.deletedDocuments.has(result.document.id) || searchedIds.has(result.document.id)) continue;
-          results.push(result);
-          searchedIds.add(result.document.id);
-        }
+  //   // 2. K-Means 阶段 (如果启用)
+  //   if (this.enableClustering && this.clusterIndex && this.clusterIndex.clusterCenters && this.clusterIndex.clusterCenters.length > 0) {
+  //     console.log('[流水线] K-means 已启用，开始聚类搜索...');
+  //     // 确定要搜索的簇数量 (最多 10 个或实际簇数)
+  //     const numClustersToSearch = Math.min(10, this.clusterIndex.clusterCenters.length);
+  //     // 找到与查询最相似的几个簇
+  //     const topClusters = this.findTopClusters(queryEmbedding, numClustersToSearch);
+  //     console.log(`[流水线] 定位到 Top ${topClusters.length} 个聚类`);
+  //     // 在这些簇内进行搜索
+  //     for (const clusterId of topClusters) {
+  //       // 在每个簇内搜索 k*10 个结果，以提高召回率
+  //       const clusterResults = this.clusterIndex.searchInCluster(clusterId, queryEmbedding, k * 10);
+  //       // 处理簇内搜索结果
+  //       for (const result of clusterResults) {
+  //         // 跳过已删除或已处理的文档
+  //         if (this.deletedDocuments.has(result.document.id) || searchedIds.has(result.document.id)) continue;
+  //         results.push(result);
+  //         searchedIds.add(result.document.id);
+  //       }
+  //     }
+  //     console.log(`[流水线] K-means 搜索得到 ${results.length} 个结果`);
+  //   } else {
+  //     console.log('[流水线] K-means 未启用、无索引或无聚类数据。');
+  //   }
+
+  //   // 3. 补充搜索阶段 (如果结果不足 K)
+  //   if (results.length < k && this.documents.length > 0) {
+  //     console.log(`[流水线] 结果不足 (${results.length}/${k})，执行 O(n) 补充搜索...`);
+  //     const additionalSimilarities = [];
+  //     // 遍历所有文档
+  //     for (let i = 0; i < this.documents.length; i++) {
+  //       const docId = this.documents[i].id;
+  //       // 只对那些未被 K-Means 搜索到且未被删除的文档进行计算
+  //       if (!searchedIds.has(docId) && !this.deletedDocuments.has(docId)) {
+  //         if (this.embeddings[i] && queryEmbedding) {
+  //           const similarity = this.cosineSimilarity(queryEmbedding, this.embeddings[i]);
+  //           additionalSimilarities.push({ document: this.documents[i], similarity: similarity });
+  //         }
+  //       }
+  //     }
+  //     // 将补充结果添加到总结果中
+  //     results.push(...additionalSimilarities);
+  //     console.log(`[流水线] O(n) 补充后总共 ${results.length} 个结果`);
+  //   }
+
+  //   // 4. 结果去重与最终排序
+  //   const uniqueResultsMap = new Map();
+  //   // 使用 Map 去重，确保每个文档只出现一次，并保留最高相似度
+  //   results.forEach(res => {
+  //     if (!uniqueResultsMap.has(res.document.id) || uniqueResultsMap.get(res.document.id).similarity < res.similarity) {
+  //       uniqueResultsMap.set(res.document.id, res);
+  //     }
+  //   });
+  //   // 将 Map 转回数组，按相似度降序排序，并取前 k 个
+  //   const finalResults = Array.from(uniqueResultsMap.values())
+  //     .sort((a, b) => b.similarity - a.similarity)
+  //     .slice(0, k);
+
+  //   // 记录搜索时间和日志
+  //   const searchTime = Date.now() - startTime;
+  //   this.searchStats.searchTime += searchTime;
+  //   console.log(`[流水线] 优化后混合搜索完成，耗时: ${searchTime}ms, 返回 ${finalResults.length} 个结果`);
+  //   return finalResults;
+  // }
+
+
+  /**
+   * 执行增强的混合相似性搜索
+   * 策略：LSH 初筛 + K-Means 区域深搜 -> 合并候选 -> 精确重排 -> Top-K
+   * @param {Array<number>} queryEmbedding - 查询向量
+   * @param {number} k - 希望返回的结果数量，默认为 5
+   * @returns {Promise<Array<object>>} 相似度最高的 K 个结果，每个结果包含 { document, similarity }
+   */
+  async similaritySearch(queryEmbedding, k = 5) {
+      const startTime = Date.now();
+
+      // 0. 初始检查与设置
+      if (!this.embeddings || this.embeddings.length === 0 || !queryEmbedding || queryEmbedding.length === 0) {
+          console.warn('[流水线] 输入查询向量无效或向量存储为空，返回空数组。');
+          return [];
       }
-      console.log(`[流水线] K-means 搜索得到 ${results.length} 个结果`);
-    } else {
-      console.log('[流水线] K-means 未启用、无索引或无聚类数据。');
-    }
+      this.searchStats.totalSearches++;
 
-    // 3. 补充搜索阶段 (如果结果不足 K)
-    if (results.length < k && this.documents.length > 0) {
-      console.log(`[流水线] 结果不足 (${results.length}/${k})，执行 O(n) 补充搜索...`);
-      const additionalSimilarities = [];
-      // 遍历所有文档
-      for (let i = 0; i < this.documents.length; i++) {
-        const docId = this.documents[i].id;
-        // 只对那些未被 K-Means 搜索到且未被删除的文档进行计算
-        if (!searchedIds.has(docId) && !this.deletedDocuments.has(docId)) {
-          if (this.embeddings[i] && queryEmbedding) {
-            const similarity = this.cosineSimilarity(queryEmbedding, this.embeddings[i]);
-            additionalSimilarities.push({ document: this.documents[i], similarity: similarity });
+      // 使用 Map 存储候选者，键为 docId，值为 { document, embedding }
+      // 这样可以自然去重，并方便后续获取 document 和 embedding 进行重排
+      const candidatePool = new Map();
+
+      // --- 阶段 1: LSH 候选者召回 ---
+      if (this.enableLSH && this.lshIndex && this.documents.length > 50) { // 文档太少时LSH意义不大
+          const lshCandidateIds = this.lshIndex.getCandidates(queryEmbedding);
+          console.log(`[流水线] LSH 初筛 ${lshCandidateIds.length} 个潜在候选 ID`);
+          for (const docId of lshCandidateIds) {
+              // 跳过已删除或已在候选池中的文档
+              if (this.deletedDocuments.has(docId) || candidatePool.has(docId)) continue;
+              
+              const docIndex = this.documentMap.get(docId); // 通过 documentMap 快速获取索引
+              if (docIndex !== undefined && this.documents[docIndex] && this.embeddings[docIndex]) {
+                  candidatePool.set(docId, {
+                      document: this.documents[docIndex],
+                      embedding: this.embeddings[docIndex]
+                  });
+              }
           }
-        }
+          console.log(`[流水线] LSH 阶段后，候选池大小: ${candidatePool.size}`);
+      } else {
+          console.log('[流水线] LSH 未启用、无索引或文档数不足，跳过 LSH 阶段。');
       }
-      // 将补充结果添加到总结果中
-      results.push(...additionalSimilarities);
-      console.log(`[流水线] O(n) 补充后总共 ${results.length} 个结果`);
-    }
 
-    // 4. 结果去重与最终排序
-    const uniqueResultsMap = new Map();
-    // 使用 Map 去重，确保每个文档只出现一次，并保留最高相似度
-    results.forEach(res => {
-      if (!uniqueResultsMap.has(res.document.id) || uniqueResultsMap.get(res.document.id).similarity < res.similarity) {
-        uniqueResultsMap.set(res.document.id, res);
+      // --- 阶段 2: K-Means 候选者召回 ---
+      if (this.enableClustering && this.clusterIndex && this.clusterIndex.clusterCenters && this.clusterIndex.clusterCenters.length > 0) {
+          console.log('[流水线] K-means 已启用，开始聚类搜索...');
+          
+          let numClustersToSearch = Math.min(3, this.clusterIndex.clusterCenters.length); // 基础搜索3个簇
+          // 如果 LSH 提供的候选太少，可以考虑搜索更多的 K-Means 簇
+          const lshEffectivenessThreshold = k * 2; 
+          if (candidatePool.size < lshEffectivenessThreshold && this.clusterIndex.clusterCenters.length > numClustersToSearch) {
+              numClustersToSearch = Math.min(5, this.clusterIndex.clusterCenters.length);
+              console.log(`[流水线] LSH 候选较少 (${candidatePool.size}), K-Means 探索簇数量增加至: ${numClustersToSearch}`);
+          }
+
+          const topClusters = this.findTopClusters(queryEmbedding, numClustersToSearch);
+          console.log(`[流水线] K-Means 定位到 Top ${topClusters.length} 个聚类`);
+
+          // 从每个选中的簇中获取的候选数量，例如 k*3 或固定值如15，取较大者
+          const candidatesPerCluster = Math.max(k * 3, 15); 
+
+          for (const clusterId of topClusters) {
+              // searchInCluster 返回 { document, similarity, embedding } 对象的数组
+              const clusterResults = this.clusterIndex.searchInCluster(clusterId, queryEmbedding, candidatesPerCluster);
+              for (const result of clusterResults) {
+                  if (this.deletedDocuments.has(result.document.id) || candidatePool.has(result.document.id)) continue;
+                  candidatePool.set(result.document.id, { // 使用 result 中的数据
+                      document: result.document,
+                      embedding: result.embedding 
+                  });
+              }
+          }
+          console.log(`[流水线] K-Means 阶段后，总候选池大小: ${candidatePool.size}`);
+      } else {
+          console.log('[流水线] K-means 未启用、无索引或无聚类数据，跳过 K-Means 阶段。');
       }
-    });
-    // 将 Map 转回数组，按相似度降序排序，并取前 k 个
-    const finalResults = Array.from(uniqueResultsMap.values())
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, k);
 
-    // 记录搜索时间和日志
-    const searchTime = Date.now() - startTime;
-    this.searchStats.searchTime += searchTime;
-    console.log(`[流水线] 优化后混合搜索完成，耗时: ${searchTime}ms, 返回 ${finalResults.length} 个结果`);
-    return finalResults;
+      // --- 阶段 3: 后备补充搜索 (如果候选池太空或太小) ---
+      const minRequiredCandidates = k; // 至少需要 k 个候选才可能满足最终需求
+      if (candidatePool.size < minRequiredCandidates && this.documents.length > 0 && k > 0) {
+          console.warn(`[流水线] LSH 和 K-Means 候选不足 (${candidatePool.size}/${k})，执行全局补充搜索...`);
+          const maxFallbackCandidatesToAdd = k * 10; // 补充搜索时，最多额外添加这么多候选
+          let fallbackAddedCount = 0;
+
+          for (let i = 0; i < this.documents.length; i++) {
+              // 如果已经通过补充找到了足够多的候选，或者候选池本身已满足需求，则停止
+              if (fallbackAddedCount >= maxFallbackCandidatesToAdd && candidatePool.size >= minRequiredCandidates) break;
+
+              const docId = this.documents[i].id;
+              // 跳过已删除、已在池中
+              if (!this.deletedDocuments.has(docId) && !candidatePool.has(docId)) {
+                  if (this.embeddings[i] && queryEmbedding && this.embeddings[i].length === queryEmbedding.length) {
+                      candidatePool.set(docId, {
+                          document: this.documents[i],
+                          embedding: this.embeddings[i]
+                      });
+                      fallbackAddedCount++;
+                  }
+              }
+          }
+          console.log(`[流水线] 全局补充搜索后，总候选池大小: ${candidatePool.size}`);
+      }
+
+
+      // --- 阶段 4: 对合并后的候选池进行精确计算和重排序 ---
+      let rankedResults = []; // 确保是数组
+      if (candidatePool.size > 0) {
+          console.log(`[流水线] 对 ${candidatePool.size} 个合并候选者进行最终精确排序...`);
+          const tempResults = [];
+          for (const data of candidatePool.values()) { // 从 Map 中获取 {document, embedding}
+              // 再次确保 embedding 有效且维度匹配
+              if (data.embedding && data.embedding.length === queryEmbedding.length) {
+                  const similarity = this.cosineSimilarity(queryEmbedding, data.embedding);
+                  tempResults.push({
+                      document: data.document,
+                      similarity: similarity,
+                  });
+              } else {
+                  console.warn(`[流水线] 候选者 ${data.document.id} 的向量无效或维度不匹配。查询维度: ${queryEmbedding.length}, 文档向量维度: ${data.embedding ? data.embedding.length : 'N/A'}`);
+              }
+          }
+          // 按相似度降序排序
+          tempResults.sort((a, b) => b.similarity - a.similarity);
+          rankedResults = tempResults; // 将排序后的结果赋给 rankedResults
+      }
+
+
+      // --- 阶段 5: 返回 Top-K 结果 ---
+      const finalRankedResults = rankedResults.slice(0, k); // 对 rankedResults (必然是数组) 进行 slice
+
+      const searchTime = Date.now() - startTime;
+      this.searchStats.searchTime += searchTime; 
+      console.log(`[流水线] 混合搜索(LSH+KMeans Rerank)完成，耗时: ${searchTime}ms, 候选池大小: ${candidatePool.size}, 精确排序数量: ${rankedResults.length}, 最终返回: ${finalRankedResults.length} 个结果`);
+      
+      return finalRankedResults; // 总是返回一个数组 (可能是空数组)
   }
 
   /**

@@ -49,15 +49,15 @@ class AdvisorService {
     this.initializingPromise = (async () => {
       console.log("初始化AI辅导员服务...");
 
-      // 尝试加载现有向量存储 (异步)
-      const loaded = await this.vectorStore.load(); // <--- 修改: 使用 await
+      // 尝试加载现有向量存储
+      const loaded = await this.vectorStore.load();
 
       if (loaded) {
         console.log("成功加载现有向量存储");
       } else {
         console.log("需要创建新的向量存储");
 
-        // 检查PDF文件是否存在 (异步)
+        // 检查PDF文件是否存在
         const pdfChecks = await Promise.all(this.pdfPaths.map(pdfPath => fs.pathExists(pdfPath)));
         const pdfExists = pdfChecks.some(exists => exists);
 
@@ -65,19 +65,19 @@ class AdvisorService {
           throw new Error("找不到必要的PDF文件，请确保培养方案和学生手册PDF已放置在正确位置");
         }
 
-        // 处理PDF文件 (已经是异步)
+        // 处理PDF文件
         const allChunks = await this.documentProcessor.processMultipleFiles(this.pdfPaths);
         console.log(`成功处理${allChunks.length}个文本块`);
 
-        // 生成嵌入向量 (已经是异步)
+        // 生成嵌入向量
         const contentsOnly = allChunks.map(chunk => chunk.content);
         const embeddings = await this.embeddingService.getBatchEmbeddings(contentsOnly);
 
         // 添加到向量存储 (同步)
         this.vectorStore.addDocuments(allChunks, embeddings);
 
-        // 保存向量存储 (异步)
-        await this.vectorStore.save(); // <--- 修改: 使用 await
+        // 保存向量存储
+        await this.vectorStore.save();
       }
 
       this.initialized = true;
@@ -87,7 +87,6 @@ class AdvisorService {
     await this.initializingPromise;
   }
 
-  // ... (optimizeSearchQuery 保持不变)
   async optimizeSearchQuery(originalQuery, context = '') {
     try {
       console.log(`优化搜索查询: "${originalQuery}"`);
@@ -166,8 +165,7 @@ class AdvisorService {
     return null;
   }
 
-  // ... (answerQuestion, answerQuestionStream, getConversation, getUserConversations, getConversationMessages, generateTitle, generateCourseReviewSummary 保持不变, 但内部调用已变为异步)
-  // 回答问题
+ // 回答问题
   async answerQuestion(question, userId, sessionId = null, knowledgeBaseId = null, useWebSearch = false) {
     if (!this.initialized) {
       await this.initialize();
@@ -210,7 +208,7 @@ class AdvisorService {
       } else {
         // 使用默认向量存储搜索
         const searchK = this.rerankingConfig.enabled ? this.rerankingConfig.topK : 5;
-        searchResults = this.vectorStore.similaritySearch(queryEmbedding, searchK);
+        searchResults = await this.vectorStore.similaritySearch(queryEmbedding, searchK);
       }
 
       console.log(`找到${searchResults.length}个相关文档片段`);
@@ -377,7 +375,7 @@ class AdvisorService {
       } else {
         // 使用默认向量存储搜索
         const searchK = this.rerankingConfig.enabled ? this.rerankingConfig.topK : 5;
-        searchResults = this.vectorStore.similaritySearch(queryEmbedding, searchK);
+        searchResults = await this.vectorStore.similaritySearch(queryEmbedding, searchK);
       }
 
       console.log(`找到${searchResults.length}个相关文档片段`);
@@ -621,7 +619,7 @@ class AdvisorService {
     }
   }
 
-  // 强制重建默认知识库 (异步)
+  // 强制重建默认知识库
   async rebuildDefaultKnowledgeBase() {
     console.log("开始重建默认知识库...");
 
@@ -629,7 +627,7 @@ class AdvisorService {
       // 清空现有向量存储
       this.vectorStore = new VectorStore({ storePath: this.vectorStorePath });
 
-      // 检查PDF文件是否存在 (异步)
+      // 检查PDF文件是否存在
       const pdfChecks = await Promise.all(this.pdfPaths.map(pdfPath => fs.pathExists(pdfPath)));
       const pdfExists = pdfChecks.some(exists => exists);
       if (!pdfExists) {
@@ -650,7 +648,7 @@ class AdvisorService {
       console.log("重新构建向量索引...");
       this.vectorStore.addDocuments(allChunks, embeddings);
 
-      // 保存向量存储 (异步)
+      // 保存向量存储
       await this.vectorStore.save();
 
       console.log("默认知识库重建完成");
@@ -661,7 +659,7 @@ class AdvisorService {
     }
   }
 
-  // 检查默认知识库状态 (异步)
+  // 检查默认知识库状态
   async checkDefaultKnowledgeBaseStatus() {
     try {
         const stats = this.vectorStore.getStats();
@@ -700,7 +698,7 @@ class AdvisorService {
   }
 
 
-  // 清理缓存 (异步)
+  // 清理缓存
   async clearProcessingCache() {
     try {
       // 清理文档处理缓存 (已异步)

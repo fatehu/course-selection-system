@@ -254,7 +254,7 @@ class KnowledgeBaseService {
       await vectorStore.addDocuments(validChunks, validEmbeddings);
       // 注意: EnhancedVectorStore 的 addDocuments 方法可能包含保存逻辑 (例如达到一定数量后自动保存)。
       // 如果不包含，或者为了确保每次处理都保存，可能需要在这里取消注释并调用:
-      // await vectorStore.save();
+      await vectorStore.save();
 
       // 更新数据库中的文件状态为 'indexed'，并记录成功处理的文本块数量
       await knowledgeBaseModel.updateFileStatus(fileId, 'indexed', validChunks.length);
@@ -589,7 +589,7 @@ class KnowledgeBaseService {
       }
 
       const queryEmbedding = await this.embeddingService.getEmbedding(query); // 将查询文本转换为嵌入向量
-      const results = vectorStore.similaritySearch(queryEmbedding, topK); // 在向量存储中执行相似性搜索
+      const results = await vectorStore.similaritySearch(queryEmbedding, topK); // 在向量存储中执行相似性搜索
       console.log(`找到 ${results.length} 个相关文档`);
       return results; // 返回搜索结果
     } catch (error) {
